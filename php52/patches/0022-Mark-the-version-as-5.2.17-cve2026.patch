@@ -1,0 +1,56 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: lpgauthier <lpgauthier@circworld.qc.ca>
+Date: Thu, 22 Oct 2026 16:03:59 -0400
+Subject: [PATCH 22/22] Mark the version as 5.2.17-cve2026
+
+So php -v / phpinfo() show that the backports are in. Note: version_compare('5.2.17-cve2026', '5.2.17') is -1; comparisons with any other version are unchanged.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ configure          | 2 +-
+ configure.in       | 2 +-
+ main/php_version.h | 4 ++--
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/configure b/configure
+index cc6a06f9a1..7e7c194814 100644
+--- a/configure
++++ b/configure
+@@ -2165,7 +2165,7 @@ echo "$ac_t""$target" 1>&6
+ PHP_MAJOR_VERSION=5
+ PHP_MINOR_VERSION=2
+ PHP_RELEASE_VERSION=17
+-PHP_EXTRA_VERSION=""
++PHP_EXTRA_VERSION="-cve2026"
+ PHP_VERSION="$PHP_MAJOR_VERSION.$PHP_MINOR_VERSION.$PHP_RELEASE_VERSION$PHP_EXTRA_VERSION"
+ PHP_VERSION_ID=`expr $PHP_MAJOR_VERSION \* 10000 + $PHP_MINOR_VERSION \* 100 + $PHP_RELEASE_VERSION`
+ 
+diff --git a/configure.in b/configure.in
+index 2ebb2c49e4..1b37a28e49 100644
+--- a/configure.in
++++ b/configure.in
+@@ -42,7 +42,7 @@ AC_CONFIG_HEADER(main/php_config.h)
+ PHP_MAJOR_VERSION=5
+ PHP_MINOR_VERSION=2
+ PHP_RELEASE_VERSION=17
+-PHP_EXTRA_VERSION=""
++PHP_EXTRA_VERSION="-cve2026"
+ PHP_VERSION="$PHP_MAJOR_VERSION.$PHP_MINOR_VERSION.$PHP_RELEASE_VERSION$PHP_EXTRA_VERSION"
+ PHP_VERSION_ID=`expr [$]PHP_MAJOR_VERSION \* 10000 + [$]PHP_MINOR_VERSION \* 100 + [$]PHP_RELEASE_VERSION`
+ 
+diff --git a/main/php_version.h b/main/php_version.h
+index b07fdf4260..f93c23dfe3 100644
+--- a/main/php_version.h
++++ b/main/php_version.h
+@@ -3,6 +3,6 @@
+ #define PHP_MAJOR_VERSION 5
+ #define PHP_MINOR_VERSION 2
+ #define PHP_RELEASE_VERSION 17
+-#define PHP_EXTRA_VERSION ""
+-#define PHP_VERSION "5.2.17"
++#define PHP_EXTRA_VERSION "-cve2026"
++#define PHP_VERSION "5.2.17-cve2026"
+ #define PHP_VERSION_ID 50217
+-- 
+2.55.0.windows.5
+

@@ -1,0 +1,108 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: lpgauthier <lpgauthier@circworld.qc.ca>
+Date: Thu, 22 Oct 2026 15:45:56 -0400
+Subject: [PATCH 06/22] Always restore magic_quotes_gpc after importing
+ environment (CVE-2012-0831)
+
+magic_quotes_gpc was switched off by writing PG() directly while
+importing environment/server variables; use zend_alter_ini_entry_ex so
+the original value is restored at request end in every case.
+
+Source: Ubuntu hardy php5-CVE-2012-0831.patch plus its regression fix.
+5.2's zend_alter_ini_entry_ex() takes no TSRMLS argument: the TSRMLS_CC
+from the hardy patch (built non-ZTS only) is dropped, otherwise
+thread-safe builds fail to compile.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ main/php_variables.c | 19 +++++++++++++++----
+ sapi/cgi/cgi_main.c  |  8 ++++++--
+ 2 files changed, 21 insertions(+), 6 deletions(-)
+
+diff --git a/main/php_variables.c b/main/php_variables.c
+index 2703b68772..55ebcf1eb0 100644
+--- a/main/php_variables.c
++++ b/main/php_variables.c
+@@ -29,6 +29,7 @@
+ #include "SAPI.h"
+ #include "php_logos.h"
+ #include "zend_globals.h"
++#include "php_ini.h"
+ 
+ /* for systems that need to override reading of environment variables */
+ void _php_import_environment_variables(zval *array_ptr TSRMLS_DC);
+@@ -438,7 +439,10 @@ void _php_import_environment_variables(zval *array_ptr TSRMLS_DC)
+ 
+ 	/* turn off magic_quotes while importing environment variables */
+ 	int magic_quotes_gpc = PG(magic_quotes_gpc);
+-	PG(magic_quotes_gpc) = 0;
++
++	if (magic_quotes_gpc) {
++		zend_alter_ini_entry_ex("magic_quotes_gpc", sizeof("magic_quotes_gpc"), "0", 1, ZEND_INI_SYSTEM, ZEND_INI_STAGE_ACTIVATE, 1);
++	}
+ 
+ 	for (env = environ; env != NULL && *env != NULL; env++) {
+ 		p = strchr(*env, '=');
+@@ -457,7 +461,10 @@ void _php_import_environment_variables(zval *array_ptr TSRMLS_DC)
+ 	if (t != buf && t != NULL) {
+ 		efree(t);
+ 	}
+-	PG(magic_quotes_gpc) = magic_quotes_gpc;
++
++	if (magic_quotes_gpc) {
++		zend_alter_ini_entry_ex("magic_quotes_gpc", sizeof("magic_quotes_gpc"), "1", 1, ZEND_INI_SYSTEM, ZEND_INI_STAGE_ACTIVATE, 1);
++	}
+ }
+ 
+ zend_bool php_std_auto_global_callback(char *name, uint name_len TSRMLS_DC)
+@@ -581,7 +588,9 @@ static inline void php_register_server_variables(TSRMLS_D)
+ 		zval_ptr_dtor(&PG(http_globals)[TRACK_VARS_SERVER]);
+ 	}
+ 	PG(http_globals)[TRACK_VARS_SERVER] = array_ptr;
+-	PG(magic_quotes_gpc) = 0;
++	if (magic_quotes_gpc) {
++		zend_alter_ini_entry_ex("magic_quotes_gpc", sizeof("magic_quotes_gpc"), "0", 1, ZEND_INI_SYSTEM, ZEND_INI_STAGE_ACTIVATE, 1);
++	}
+ 
+ 	/* Server variables */
+ 	if (sapi_module.register_server_variables) {
+@@ -606,7 +615,9 @@ static inline void php_register_server_variables(TSRMLS_D)
+ 		php_register_variable_ex("REQUEST_TIME", &new_entry, array_ptr TSRMLS_CC);
+ 	}
+ 
+-	PG(magic_quotes_gpc) = magic_quotes_gpc;
++	if (magic_quotes_gpc) {
++		zend_alter_ini_entry_ex("magic_quotes_gpc", sizeof("magic_quotes_gpc"), "1", 1, ZEND_INI_SYSTEM, ZEND_INI_STAGE_ACTIVATE, 1);
++	}
+ }
+ /* }}} */
+ 
+diff --git a/sapi/cgi/cgi_main.c b/sapi/cgi/cgi_main.c
+index a4a19c2bff..ff5b8f3051 100644
+--- a/sapi/cgi/cgi_main.c
++++ b/sapi/cgi/cgi_main.c
+@@ -609,7 +609,9 @@ void cgi_php_import_environment_variables(zval *array_ptr TSRMLS_DC)
+ 		int filter_arg = (array_ptr == PG(http_globals)[TRACK_VARS_ENV])?PARSE_ENV:PARSE_SERVER;
+ 
+ 		/* turn off magic_quotes while importing environment variables */
+-		PG(magic_quotes_gpc) = 0;
++		if (magic_quotes_gpc) {
++			zend_alter_ini_entry_ex("magic_quotes_gpc", sizeof("magic_quotes_gpc"), "0", 1, ZEND_INI_SYSTEM, ZEND_INI_STAGE_ACTIVATE, 1);
++		}
+ 		for (zend_hash_internal_pointer_reset_ex(&request->env, &pos);
+ 		     zend_hash_get_current_key_ex(&request->env, &var, &var_len, &idx, 0, &pos) == HASH_KEY_IS_STRING &&
+ 		     zend_hash_get_current_data_ex(&request->env, (void **) &val, &pos) == SUCCESS;
+@@ -619,7 +621,9 @@ void cgi_php_import_environment_variables(zval *array_ptr TSRMLS_DC)
+ 				php_register_variable_safe(var, *val, new_val_len, array_ptr TSRMLS_CC);
+ 			}
+ 		}
+-		PG(magic_quotes_gpc) = magic_quotes_gpc;
++		if (magic_quotes_gpc) {
++			zend_alter_ini_entry_ex("magic_quotes_gpc", sizeof("magic_quotes_gpc"), "1", 1, ZEND_INI_SYSTEM, ZEND_INI_STAGE_ACTIVATE, 1);
++		}
+ 	}
+ }
+ #endif
+-- 
+2.55.0.windows.5
+

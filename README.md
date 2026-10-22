@@ -12,6 +12,9 @@ php.net only released fixed builds for 8.2 and later, and Windows binaries for
 nothing older. These versions are end of life: this is a stopgap to keep legacy
 applications running while they are migrated, not a supported PHP.
 
+**PHP 5.2.17** (Visual C++ 6.0, core only, with a wider set of security backports) is in
+[`php52/`](php52/README.md).
+
 ## What is in the patches
 
 | Version | Base tag | Patches | Source of the CVE fix |
@@ -243,6 +246,7 @@ patches/<version>/  git format-patch series, applied in name order
 tests/              targeted .phpt tests for the fix
 ubuntu-18.04/       .deb rebuilds for Ubuntu 18.04 (build.sh, test.sh, the 7.2 patch)
 validate/           Linux validation (Dockerfile, ci.sh, validate.sh, run-targeted.sh)
+php52/             PHP 5.2.17 + backports: VC6 build kit, patches, tests, validation
 ```
 
 ## Credits
