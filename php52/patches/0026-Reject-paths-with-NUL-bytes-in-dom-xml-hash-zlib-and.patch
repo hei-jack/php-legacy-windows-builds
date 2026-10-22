@@ -1,0 +1,243 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: lpgauthier <lpgauthier@circworld.qc.ca>
+Date: Thu, 22 Oct 2026 16:53:33 -0400
+Subject: [PATCH 26/27] Reject paths with NUL bytes in dom, xml, hash, zlib and
+ SPL (CVE-2015-3411, CVE-2015-3412, CVE-2015-4598)
+
+Same check as for the standard file functions, for the path arguments
+of the modules built into the Windows php5ts.dll:
+
+  DOMDocument::load, loadHTMLFile, save, saveHTMLFile, schemaValidate,
+  relaxNGValidate (file modes only); XMLReader::open, setSchema,
+  setRelaxNGSchema; xmlwriter_open_uri / XMLWriter::openUri;
+  simplexml_load_file; hash_file, hash_hmac_file; gzopen, gzfile,
+  readgzfile; SplFileInfo, SplFileObject, DirectoryIterator,
+  RecursiveDirectoryIterator (RuntimeException/UnexpectedValueException,
+  as for other constructor errors).
+
+Not changed: com_dotnet (COM persistence) and odbc, which are Windows /
+ODBC specific and cannot be validated here.
+
+Based on Debian squeeze-lts CVE-2015-3411-3412 and CVE-2015-4598,
+written for 5.2.17.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ext/dom/document.c            | 14 ++++++++++++++
+ ext/hash/hash.c               |  6 ++++++
+ ext/simplexml/simplexml.c     |  1 +
+ ext/spl/spl_directory.c       |  6 ++++++
+ ext/xmlreader/php_xmlreader.c |  7 +++++++
+ ext/xmlwriter/php_xmlwriter.c |  1 +
+ ext/zlib/zlib.c               |  3 +++
+ 7 files changed, 38 insertions(+)
+
+diff --git a/ext/dom/document.c b/ext/dom/document.c
+index 06f8cebe70..837adb7107 100644
+--- a/ext/dom/document.c
++++ b/ext/dom/document.c
+@@ -1736,6 +1736,9 @@ static void dom_parse_document(INTERNAL_FUNCTION_PARAMETERS, int mode) {
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Empty string supplied as input");
+ 		RETURN_FALSE;
+ 	}
++	if (mode == DOM_LOAD_FILE) {
++		PHP_NUL_PATH_CHECK(source, source_len);
++	}
+ 
+ 	newdoc = dom_document_parser(id, mode, source, source_len, options TSRMLS_CC);
+ 
+@@ -1813,6 +1816,7 @@ PHP_FUNCTION(dom_document_save)
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Invalid Filename");
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(file, file_len);
+ 
+ 	DOM_GET_OBJ(docp, id, xmlDocPtr, intern);
+ 
+@@ -2043,6 +2047,9 @@ _dom_document_schema_validate(INTERNAL_FUNCTION_PARAMETERS, int type)
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Invalid Schema source");
+ 		RETURN_FALSE;
+ 	}
++	if (type == DOM_LOAD_FILE) {
++		PHP_NUL_PATH_CHECK(source, source_len);
++	}
+ 
+ 	DOM_GET_OBJ(docp, id, xmlDocPtr, intern);
+ 
+@@ -2133,6 +2140,9 @@ _dom_document_relaxNG_validate(INTERNAL_FUNCTION_PARAMETERS, int type)
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Invalid Schema source");
+ 		RETURN_FALSE;
+ 	}
++	if (type == DOM_LOAD_FILE) {
++		PHP_NUL_PATH_CHECK(source, source_len);
++	}
+ 
+ 	DOM_GET_OBJ(docp, id, xmlDocPtr, intern);
+ 
+@@ -2224,6 +2234,9 @@ static void dom_load_html(INTERNAL_FUNCTION_PARAMETERS, int mode)
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Empty string supplied as input");
+ 		RETURN_FALSE;
+ 	}
++	if (mode == DOM_LOAD_FILE) {
++		PHP_NUL_PATH_CHECK(source, source_len);
++	}
+ 
+ 	if (mode == DOM_LOAD_FILE) {
+ 		ctxt = htmlCreateFileParserCtxt(source, NULL);
+@@ -2316,6 +2329,7 @@ PHP_FUNCTION(dom_document_save_html_file)
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Invalid Filename");
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(file, file_len);
+ 
+ 	DOM_GET_OBJ(docp, id, xmlDocPtr, intern);
+ 
+diff --git a/ext/hash/hash.c b/ext/hash/hash.c
+index 7bdda75ff0..3d593dd11c 100644
+--- a/ext/hash/hash.c
++++ b/ext/hash/hash.c
+@@ -75,6 +75,9 @@ static void php_hash_do_hash(INTERNAL_FUNCTION_PARAMETERS, int isfilename)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss|b", &algo, &algo_len, &data, &data_len, &raw_output) == FAILURE) {
+ 		return;
+ 	}
++	if (isfilename) {
++		PHP_NUL_PATH_CHECK(data, data_len);
++	}
+ 
+ 	ops = php_hash_fetch_ops(algo, algo_len);
+ 	if (!ops) {
+@@ -150,6 +153,9 @@ static void php_hash_do_hash_hmac(INTERNAL_FUNCTION_PARAMETERS, int isfilename)
+ 																  &key, &key_len, &raw_output) == FAILURE) {
+ 		return;
+ 	}
++	if (isfilename) {
++		PHP_NUL_PATH_CHECK(data, data_len);
++	}
+ 
+ 	ops = php_hash_fetch_ops(algo, algo_len);
+ 	if (!ops) {
+diff --git a/ext/simplexml/simplexml.c b/ext/simplexml/simplexml.c
+index 64a65140e5..8e78524617 100644
+--- a/ext/simplexml/simplexml.c
++++ b/ext/simplexml/simplexml.c
+@@ -2032,6 +2032,7 @@ PHP_FUNCTION(simplexml_load_file)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|C!lsb", &filename, &filename_len, &ce, &options, &ns, &ns_len, &isprefix) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	docp = xmlReadFile(filename, NULL, options);
+ 
+diff --git a/ext/spl/spl_directory.c b/ext/spl/spl_directory.c
+index 7713324e32..5de9bc9cac 100755
+--- a/ext/spl/spl_directory.c
++++ b/ext/spl/spl_directory.c
+@@ -484,6 +484,7 @@ SPL_METHOD(DirectoryIterator, __construct)
+ 		php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC);
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK_RET(path, len, php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC); return);
+ 
+ 	if (!len) {
+ 		php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC);
+@@ -730,6 +731,7 @@ SPL_METHOD(SplFileInfo, __construct)
+ 		php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC);
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK_RET(path, len, php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC); return);
+ 
+ 	intern = (spl_filesystem_object*)zend_object_store_get_object(getThis() TSRMLS_CC);
+ 	
+@@ -980,6 +982,7 @@ SPL_METHOD(RecursiveDirectoryIterator, __construct)
+ 		php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC);
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK_RET(path, len, php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC); return);
+ 
+ 	intern = (spl_filesystem_object*)zend_object_store_get_object(getThis() TSRMLS_CC);
+ 	spl_filesystem_dir_open(intern, path TSRMLS_CC);
+@@ -1743,6 +1746,9 @@ SPL_METHOD(SplFileObject, __construct)
+ 		php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC);
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK_RET(intern->file_name, intern->file_name_len,
++		intern->file_name = NULL; /* not a copy yet, see spl_filesystem_file_open() */
++		php_set_error_handling(EH_NORMAL, NULL TSRMLS_CC); return);
+ 	
+ 	if (spl_filesystem_file_open(intern, use_include_path, 0 TSRMLS_CC) == SUCCESS) {
+ 		p1 = strrchr(intern->file_name, '/');
+diff --git a/ext/xmlreader/php_xmlreader.c b/ext/xmlreader/php_xmlreader.c
+index 7dc882cfed..3db14398b5 100644
+--- a/ext/xmlreader/php_xmlreader.c
++++ b/ext/xmlreader/php_xmlreader.c
+@@ -512,6 +512,9 @@ static void php_xmlreader_set_relaxng_schema(INTERNAL_FUNCTION_PARAMETERS, int t
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Schema data source is required");
+ 		RETURN_FALSE;
+ 	}
++	if (type == XMLREADER_LOAD_FILE && source != NULL) {
++		PHP_NUL_PATH_CHECK(source, source_len);
++	}
+ 
+ 	id = getThis();
+ 
+@@ -884,6 +887,7 @@ PHP_METHOD(xmlreader, open)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|s!l", &source, &source_len, &encoding, &encoding_len, &options) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(source, source_len);
+ 
+ 	id = getThis();
+ 	if (id != NULL) {
+@@ -975,6 +979,9 @@ PHP_METHOD(xmlreader, setSchema)
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Schema data source is required");
+ 		RETURN_FALSE;
+ 	}
++	if (source != NULL) {
++		PHP_NUL_PATH_CHECK(source, source_len);
++	}
+ 
+ 	id = getThis();
+ 
+diff --git a/ext/xmlwriter/php_xmlwriter.c b/ext/xmlwriter/php_xmlwriter.c
+index 3b841d773b..eab29b4d18 100644
+--- a/ext/xmlwriter/php_xmlwriter.c
++++ b/ext/xmlwriter/php_xmlwriter.c
+@@ -1460,6 +1460,7 @@ static PHP_FUNCTION(xmlwriter_open_uri)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &source, &source_len) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(source, source_len);
+ 	
+ #ifdef ZEND_ENGINE_2
+ 	if (this) {
+diff --git a/ext/zlib/zlib.c b/ext/zlib/zlib.c
+index fac4ea7d78..ae7b5266d3 100644
+--- a/ext/zlib/zlib.c
++++ b/ext/zlib/zlib.c
+@@ -317,6 +317,7 @@ static PHP_FUNCTION(gzfile)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|l", &filename, &filename_len, &flags) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	use_include_path = flags ? USE_PATH : 0;
+ 
+@@ -360,6 +361,7 @@ static PHP_FUNCTION(gzopen)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss|l", &filename, &filename_len, &mode, &mode_len, &flags) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	use_include_path = flags ? USE_PATH : 0;
+ 
+@@ -389,6 +391,7 @@ static PHP_FUNCTION(readgzfile)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|l", &filename, &filename_len, &flags) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	use_include_path = flags ? USE_PATH : 0;
+ 
+-- 
+2.55.0.windows.5
+

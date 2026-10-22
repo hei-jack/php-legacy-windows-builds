@@ -3,6 +3,7 @@
 #   base    = release tarball, full suites       (baseline)
 #   patched = tarball + php52/patches, full suites
 #   zts, debug = patched, thread-safe / debug builds, targeted tests only
+#   c89 = patched, -Wdeclaration-after-statement (VC6 is a C89 compiler)
 # usage: php52/validate/run-all.sh <work dir>   (Windows path in Git Bash, e.g. C:/php-bp/v52)
 # The work dir gets php-5.2.17.tar.gz (downloaded if missing) and out/ with the results.
 set -eu
@@ -15,12 +16,16 @@ mkdir -p "$W/out" "$W/empty-patches"
 echo "1abe07c1fdd64184708a3ba179abcfcca5662a4e0d2037eb2748b75abc42e767  $W/php-5.2.17.tar.gz" | sha256sum -c -
 docker build -q -t php52-ci "$here"
 run() { local label=$1 patches=$2 quick=$3; shift 3
-  docker run --rm -e QUICK=$quick -v "$W":/src:ro -v "$patches":/patches:ro -v "$php52/tests":/tests:ro -v "$W/out":/out php52-ci ci52.sh $label "$@"; }
+  local env=(-e QUICK=$quick); [ -n "${CFLAGS:-}" ] && env+=(-e "CFLAGS=$CFLAGS")
+  docker run --rm "${env[@]}" -v "$W":/src:ro -v "$patches":/patches:ro -v "$php52/tests":/tests:ro -v "$W/out":/out php52-ci ci52.sh $label "$@"; }
 run base52    "$W/empty-patches" 0
 run p52       "$php52/patches" 0
 run p52-zts   "$php52/patches" 1 --zts
 run p52-debug "$php52/patches" 1 --debug
+# VC6 compiles C89: no declarations after statements in the patched code
+CFLAGS="-O2 -Wdeclaration-after-statement" run p52-c89 "$php52/patches" 1
 cd "$W/out"
 echo "== failing only with the patches:"; comm -13 base52.fails p52.fails
 echo "== fixed by the patches:"; comm -23 base52.fails p52.fails
 for l in base52 p52 p52-zts p52-debug; do echo "== $l"; grep -E 'targeted|Tests|WARNING' $l.summary || true; done
+echo "== C89 (mixed declarations, must be 0): $(grep -c "mixed declarations" p52-c89.warnings)"

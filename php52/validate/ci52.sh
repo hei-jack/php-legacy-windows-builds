@@ -12,7 +12,8 @@ log() { echo "[$(date +%T)] $*" | tee -a $out.summary; }
 
 mkdir -p /build && cd /build && tar -xzf /src/php-5.2.17.tar.gz && cd php-5.2.17 || { log "EXTRACT FAILED"; exit 1; }
 for p in $(ls /patches/*.patch 2>/dev/null | sort); do
-  patch -p1 -s < "$p" || { log "PATCH FAILED: $(basename $p)"; exit 1; }
+  # git apply, like fetch.ps1: some test files contain NUL bytes and come as git binary patches
+  GIT_CEILING_DIRECTORIES=/build git apply --whitespace=nowarn "$p" || { log "PATCH FAILED: $(basename $p)"; exit 1; }
   log "applied $(basename $p)"
 done
 

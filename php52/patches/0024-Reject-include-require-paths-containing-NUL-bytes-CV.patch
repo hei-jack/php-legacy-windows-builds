@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: lpgauthier <lpgauthier@circworld.qc.ca>
+Date: Thu, 22 Oct 2026 16:48:26 -0400
+Subject: [PATCH 24/27] Reject include/require paths containing NUL bytes
+ (CVE-2006-7243)
+
+include "$dir/$name.php" with a NUL byte in $name silently opened a truncated path - the classic way around extension checks. Such paths now fail exactly like a missing file (warning for include, fatal error for require), as in PHP 5.3.4. zend_vm_execute.h regenerated with zend_vm_gen.php (it reproduces the tarball's file byte for byte before the change).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ Zend/zend_vm_def.h     |  9 ++++++++-
+ Zend/zend_vm_execute.h | 36 ++++++++++++++++++++++++++++++++----
+ 2 files changed, 40 insertions(+), 5 deletions(-)
+
+diff --git a/Zend/zend_vm_def.h b/Zend/zend_vm_def.h
+index 9485e9df8d..5741f4d4a8 100644
+--- a/Zend/zend_vm_def.h
++++ b/Zend/zend_vm_def.h
+@@ -2879,7 +2879,14 @@ ZEND_VM_HANDLER(73, ZEND_INCLUDE_OR_EVAL, CONST|TMP|VAR|CV, ANY)
+ 
+ 	return_value_used = RETURN_VALUE_USED(opline);
+ 
+-	switch (Z_LVAL(opline->op2.u.constant)) {
++	if (Z_LVAL(opline->op2.u.constant) != ZEND_EVAL && strlen(Z_STRVAL_P(inc_filename)) != (size_t) Z_STRLEN_P(inc_filename)) {
++		/* a NUL byte would silently truncate the path (CVE-2006-7243): fail as for a missing file */
++		if (Z_LVAL(opline->op2.u.constant) == ZEND_INCLUDE_ONCE || Z_LVAL(opline->op2.u.constant) == ZEND_INCLUDE) {
++			zend_message_dispatcher(ZMSG_FAILED_INCLUDE_FOPEN, Z_STRVAL_P(inc_filename));
++		} else {
++			zend_message_dispatcher(ZMSG_FAILED_REQUIRE_FOPEN, Z_STRVAL_P(inc_filename));
++		}
++	} else switch (Z_LVAL(opline->op2.u.constant)) {
+ 		case ZEND_INCLUDE_ONCE:
+ 		case ZEND_REQUIRE_ONCE: {
+ 				zend_file_handle file_handle;
+diff --git a/Zend/zend_vm_execute.h b/Zend/zend_vm_execute.h
+index 9d1ea7a23d..a4a875808d 100644
+--- a/Zend/zend_vm_execute.h
++++ b/Zend/zend_vm_execute.h
+@@ -2028,7 +2028,14 @@ static int ZEND_INCLUDE_OR_EVAL_SPEC_CONST_HANDLER(ZEND_OPCODE_HANDLER_ARGS)
+ 
+ 	return_value_used = RETURN_VALUE_USED(opline);
+ 
+-	switch (Z_LVAL(opline->op2.u.constant)) {
++	if (Z_LVAL(opline->op2.u.constant) != ZEND_EVAL && strlen(Z_STRVAL_P(inc_filename)) != (size_t) Z_STRLEN_P(inc_filename)) {
++		/* a NUL byte would silently truncate the path (CVE-2006-7243): fail as for a missing file */
++		if (Z_LVAL(opline->op2.u.constant) == ZEND_INCLUDE_ONCE || Z_LVAL(opline->op2.u.constant) == ZEND_INCLUDE) {
++			zend_message_dispatcher(ZMSG_FAILED_INCLUDE_FOPEN, Z_STRVAL_P(inc_filename));
++		} else {
++			zend_message_dispatcher(ZMSG_FAILED_REQUIRE_FOPEN, Z_STRVAL_P(inc_filename));
++		}
++	} else switch (Z_LVAL(opline->op2.u.constant)) {
+ 		case ZEND_INCLUDE_ONCE:
+ 		case ZEND_REQUIRE_ONCE: {
+ 				zend_file_handle file_handle;
+@@ -4617,7 +4624,14 @@ static int ZEND_INCLUDE_OR_EVAL_SPEC_TMP_HANDLER(ZEND_OPCODE_HANDLER_ARGS)
+ 
+ 	return_value_used = RETURN_VALUE_USED(opline);
+ 
+-	switch (Z_LVAL(opline->op2.u.constant)) {
++	if (Z_LVAL(opline->op2.u.constant) != ZEND_EVAL && strlen(Z_STRVAL_P(inc_filename)) != (size_t) Z_STRLEN_P(inc_filename)) {
++		/* a NUL byte would silently truncate the path (CVE-2006-7243): fail as for a missing file */
++		if (Z_LVAL(opline->op2.u.constant) == ZEND_INCLUDE_ONCE || Z_LVAL(opline->op2.u.constant) == ZEND_INCLUDE) {
++			zend_message_dispatcher(ZMSG_FAILED_INCLUDE_FOPEN, Z_STRVAL_P(inc_filename));
++		} else {
++			zend_message_dispatcher(ZMSG_FAILED_REQUIRE_FOPEN, Z_STRVAL_P(inc_filename));
++		}
++	} else switch (Z_LVAL(opline->op2.u.constant)) {
+ 		case ZEND_INCLUDE_ONCE:
+ 		case ZEND_REQUIRE_ONCE: {
+ 				zend_file_handle file_handle;
+@@ -7791,7 +7805,14 @@ static int ZEND_INCLUDE_OR_EVAL_SPEC_VAR_HANDLER(ZEND_OPCODE_HANDLER_ARGS)
+ 
+ 	return_value_used = RETURN_VALUE_USED(opline);
+ 
+-	switch (Z_LVAL(opline->op2.u.constant)) {
++	if (Z_LVAL(opline->op2.u.constant) != ZEND_EVAL && strlen(Z_STRVAL_P(inc_filename)) != (size_t) Z_STRLEN_P(inc_filename)) {
++		/* a NUL byte would silently truncate the path (CVE-2006-7243): fail as for a missing file */
++		if (Z_LVAL(opline->op2.u.constant) == ZEND_INCLUDE_ONCE || Z_LVAL(opline->op2.u.constant) == ZEND_INCLUDE) {
++			zend_message_dispatcher(ZMSG_FAILED_INCLUDE_FOPEN, Z_STRVAL_P(inc_filename));
++		} else {
++			zend_message_dispatcher(ZMSG_FAILED_REQUIRE_FOPEN, Z_STRVAL_P(inc_filename));
++		}
++	} else switch (Z_LVAL(opline->op2.u.constant)) {
+ 		case ZEND_INCLUDE_ONCE:
+ 		case ZEND_REQUIRE_ONCE: {
+ 				zend_file_handle file_handle;
+@@ -20226,7 +20247,14 @@ static int ZEND_INCLUDE_OR_EVAL_SPEC_CV_HANDLER(ZEND_OPCODE_HANDLER_ARGS)
+ 
+ 	return_value_used = RETURN_VALUE_USED(opline);
+ 
+-	switch (Z_LVAL(opline->op2.u.constant)) {
++	if (Z_LVAL(opline->op2.u.constant) != ZEND_EVAL && strlen(Z_STRVAL_P(inc_filename)) != (size_t) Z_STRLEN_P(inc_filename)) {
++		/* a NUL byte would silently truncate the path (CVE-2006-7243): fail as for a missing file */
++		if (Z_LVAL(opline->op2.u.constant) == ZEND_INCLUDE_ONCE || Z_LVAL(opline->op2.u.constant) == ZEND_INCLUDE) {
++			zend_message_dispatcher(ZMSG_FAILED_INCLUDE_FOPEN, Z_STRVAL_P(inc_filename));
++		} else {
++			zend_message_dispatcher(ZMSG_FAILED_REQUIRE_FOPEN, Z_STRVAL_P(inc_filename));
++		}
++	} else switch (Z_LVAL(opline->op2.u.constant)) {
+ 		case ZEND_INCLUDE_ONCE:
+ 		case ZEND_REQUIRE_ONCE: {
+ 				zend_file_handle file_handle;
+-- 
+2.55.0.windows.5
+

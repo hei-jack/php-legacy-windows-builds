@@ -1,0 +1,1136 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: lpgauthier <lpgauthier@circworld.qc.ca>
+Date: Thu, 22 Oct 2026 16:51:22 -0400
+Subject: [PATCH 25/27] Reject paths with NUL bytes in the standard file
+ functions (CVE-2006-7243, CVE-2015-2348, CVE-2015-4025)
+
+A NUL byte in a path argument was passed to the C file APIs, which
+silently used the truncated path (e.g. "upload.php\0.jpg" acting on
+"upload.php"). Every path argument of these functions is now checked
+right after parsing: a warning "Path must not contain NUL bytes" and
+FALSE, as in later PHP 5 versions:
+
+  fopen, file, file_get_contents, file_put_contents, readfile, copy,
+  rename, unlink, mkdir, rmdir, tempnam, realpath, get_meta_tags,
+  fnmatch, chdir, opendir/dir, scandir, glob, chmod, chown/chgrp
+  (and l*), touch, disk_free_space/disk_total_space, readlink,
+  linkinfo, symlink, link, md5_file, sha1_file, iptcembed,
+  getimagesize, highlight_file/show_source, php_strip_whitespace,
+  parse_ini_file, set_include_path, error_log (file destination),
+  is_uploaded_file, move_uploaded_file (CVE-2015-2348)
+
+php_stat() (file_exists, is_file, is_dir, stat, filesize, ...) returns
+FALSE without a warning, as upstream does, since these are used as
+probes. The check is a macro in main/php.h (PHP_NUL_PATH_CHECK).
+
+Based on CentOS 5 php53 CVE-2006-7243 and Debian squeeze-lts
+CVE-2015-2348 / CVE-2015-4025-4026 patches, written for 5.2.17's
+argument parsing.
+
+The expectations of the ext/standard/tests/file tests that relied on the
+truncation (18 tests, and the 8 matching -win32 variants) are updated
+the way upstream did.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ext/standard/basic_functions.c                |  10 +++
+ ext/standard/dir.c                            |   4 +
+ ext/standard/file.c                           |  18 ++++
+ ext/standard/filestat.c                       |  10 +++
+ ext/standard/image.c                          |   2 +
+ ext/standard/iptc.c                           |   1 +
+ ext/standard/link.c                           |   6 ++
+ ext/standard/md5.c                            |   1 +
+ ext/standard/sha1.c                           |   1 +
+ .../tests/file/copy_variation4-win32.phpt     | Bin 4276 -> 4371 bytes
+ ext/standard/tests/file/copy_variation4.phpt  | Bin 4548 -> 4590 bytes
+ .../tests/file/disk_free_space_variation.phpt |  32 +++++--
+ .../file/disk_total_space_variation.phpt      |  16 +++-
+ .../file_get_contents_variation8-win32.phpt   |   2 +-
+ .../file/file_get_contents_variation8.phpt    |   2 +-
+ .../file_put_contents_variation8-win32.phpt   |   2 +-
+ .../file/file_put_contents_variation8.phpt    | Bin 2314 -> 2320 bytes
+ .../tests/file/filegroup_variation3.phpt      |   4 +-
+ .../tests/file/fileinode_variation3.phpt      |   4 +-
+ .../tests/file/fileowner_variation3.phpt      |   4 +-
+ .../tests/file/fileperms_variation3.phpt      |   4 +-
+ .../tests/file/fnmatch_variation.phpt         |  84 +++++++++++++++---
+ .../tests/file/glob_variation-win32.phpt      |  37 ++++----
+ ext/standard/tests/file/glob_variation.phpt   |  37 ++++----
+ .../tests/file/is_dir_variation4.phpt         |   4 +-
+ .../tests/file/is_file_variation4.phpt        |   4 +-
+ .../file/readfile_variation10-win32.phpt      |   2 +-
+ .../tests/file/readfile_variation10.phpt      | Bin 1789 -> 1795 bytes
+ .../tests/file/rename_variation13-win32.phpt  |   4 +-
+ .../tests/file/rename_variation13.phpt        |   6 +-
+ .../tests/file/stream_rfc2397_006.phpt        |   7 +-
+ .../tests/file/tempnam_variation3-win32.phpt  |   8 +-
+ .../tests/file/tempnam_variation3.phpt        |   8 +-
+ .../tests/file/tempnam_variation7-win32.phpt  |   8 +-
+ .../tests/file/tempnam_variation7.phpt        |   8 +-
+ main/php.h                                    |  11 +++
+ 36 files changed, 259 insertions(+), 92 deletions(-)
+
+diff --git a/ext/standard/basic_functions.c b/ext/standard/basic_functions.c
+index 6f4116610d..ba8d3ca39e 100644
+--- a/ext/standard/basic_functions.c
++++ b/ext/standard/basic_functions.c
+@@ -5028,6 +5028,9 @@ PHP_FUNCTION(error_log)
+ 	if (option != NULL) {
+ 		convert_to_string_ex(option);
+ 		opt = Z_STRVAL_PP(option);
++		if (opt_err == 3) { /* destination is a file */
++			PHP_NUL_PATH_CHECK(Z_STRVAL_PP(option), Z_STRLEN_PP(option));
++		}
+ 	}
+ 
+ 	if (emailhead != NULL) {
+@@ -5511,6 +5514,7 @@ PHP_FUNCTION(highlight_file)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|b", &filename, &filename_len, &i) == FAILURE) {
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	if (PG(safe_mode) && (!php_checkuid(filename, NULL, CHECKUID_ALLOW_ONLY_FILE))) {
+ 		RETURN_FALSE;
+@@ -5565,6 +5569,7 @@ PHP_FUNCTION(php_strip_whitespace)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &filename, &filename_len) == FAILURE) {
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	file_handle.type = ZEND_HANDLE_FILENAME;
+ 	file_handle.filename = filename;
+@@ -5822,6 +5827,7 @@ PHP_FUNCTION(set_include_path)
+ 		WRONG_PARAM_COUNT;
+ 	}
+ 	convert_to_string_ex(new_value);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(new_value), Z_STRLEN_PP(new_value));
+ 	old_value = zend_ini_string("include_path", sizeof("include_path"), 0);
+ 	/* copy to return here, because alter might free it! */
+ 	if (old_value) {
+@@ -6132,6 +6138,7 @@ PHP_FUNCTION(is_uploaded_file)
+ 	}
+ 
+ 	convert_to_string_ex(path);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(path), Z_STRLEN_PP(path));
+ 
+ 	if (zend_hash_exists(SG(rfc1867_uploaded_files), Z_STRVAL_PP(path), Z_STRLEN_PP(path)+1)) {
+ 		RETURN_TRUE;
+@@ -6161,6 +6168,8 @@ PHP_FUNCTION(move_uploaded_file)
+ 	}
+ 	convert_to_string_ex(path);
+ 	convert_to_string_ex(new_path);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(path), Z_STRLEN_PP(path));
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(new_path), Z_STRLEN_PP(new_path));
+ 
+ 	if (!zend_hash_exists(SG(rfc1867_uploaded_files), Z_STRVAL_PP(path), Z_STRLEN_PP(path)+1)) {
+ 		RETURN_FALSE;
+@@ -6335,6 +6344,7 @@ PHP_FUNCTION(parse_ini_file)
+ 	}
+ 
+ 	convert_to_string_ex(filename);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(filename), Z_STRLEN_PP(filename));
+ 
+ 	memset(&fh, 0, sizeof(fh));
+ 	fh.filename = Z_STRVAL_PP(filename);
+diff --git a/ext/standard/dir.c b/ext/standard/dir.c
+index 7b8e53d0c1..6cad212b69 100644
+--- a/ext/standard/dir.c
++++ b/ext/standard/dir.c
+@@ -211,6 +211,7 @@ static void _php_do_opendir(INTERNAL_FUNCTION_PARAMETERS, int createobject)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|r", &dirname, &dir_len, &zcontext) == FAILURE) {
+ 		RETURN_NULL();
+ 	}
++	PHP_NUL_PATH_CHECK(dirname, dir_len);
+ 
+ 	if (zcontext) {
+ 		context = php_stream_context_from_zval(zcontext, 0);
+@@ -319,6 +320,7 @@ PHP_FUNCTION(chdir)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &str, &str_len) == FAILURE) {
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(str, str_len);
+ 
+ 	if ((PG(safe_mode) && !php_checkuid(str, NULL, CHECKUID_CHECK_FILE_AND_DIR)) || php_check_open_basedir(str TSRMLS_CC)) {
+ 		RETURN_FALSE;
+@@ -430,6 +432,7 @@ PHP_FUNCTION(glob)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|l", &pattern, &pattern_len, &flags) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(pattern, pattern_len);
+ 
+ 	if (pattern_len >= MAXPATHLEN) {
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Pattern exceeds the maximum allowed length of %d characters", MAXPATHLEN);
+@@ -551,6 +554,7 @@ PHP_FUNCTION(scandir)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|lr", &dirn, &dirn_len, &flags, &zcontext) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(dirn, dirn_len);
+ 
+ 	if (dirn_len < 1) {
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Directory name cannot be empty");
+diff --git a/ext/standard/file.c b/ext/standard/file.c
+index b1e4c8aeb3..8293f3a304 100644
+--- a/ext/standard/file.c
++++ b/ext/standard/file.c
+@@ -374,6 +374,7 @@ PHP_FUNCTION(get_meta_tags)
+ 							  &filename, &filename_len, &use_include_path) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	md.stream = php_stream_open_wrapper(filename, "rb",
+ 			(use_include_path ? USE_PATH : 0) | ENFORCE_SAFE_MODE | REPORT_ERRORS,
+@@ -530,6 +531,7 @@ PHP_FUNCTION(file_get_contents)
+ 				  &filename, &filename_len, &use_include_path, &zcontext, &offset, &maxlen) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	if (ZEND_NUM_ARGS() == 5 && maxlen < 0) {
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "length must be greater than or equal to zero");
+@@ -590,6 +592,7 @@ PHP_FUNCTION(file_put_contents)
+ 				&data, &flags, &zcontext) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	if (Z_TYPE_P(data) == IS_RESOURCE) {
+ 		php_stream_from_zval(srcstream, &data);
+@@ -728,6 +731,7 @@ PHP_FUNCTION(file)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|lr!", &filename, &filename_len, &flags, &zcontext) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 	if (flags < 0 || flags > (PHP_FILE_USE_INCLUDE_PATH | PHP_FILE_IGNORE_NEW_LINES | PHP_FILE_SKIP_EMPTY_LINES | PHP_FILE_NO_DEFAULT_CONTEXT)) {
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "'%ld' flag is not supported", flags);
+ 		RETURN_FALSE;
+@@ -827,6 +831,8 @@ PHP_FUNCTION(tempnam)
+ 	}
+ 	convert_to_string_ex(arg1);
+ 	convert_to_string_ex(arg2);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(arg1), Z_STRLEN_PP(arg1));
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(arg2), Z_STRLEN_PP(arg2));
+ 
+ 	if (PG(safe_mode) &&(!php_checkuid(Z_STRVAL_PP(arg1), NULL, CHECKUID_CHECK_FILE_AND_DIR))) {
+ 		RETURN_FALSE;
+@@ -889,6 +895,7 @@ PHP_NAMED_FUNCTION(php_if_fopen)
+ 				&mode, &mode_len, &use_include_path, &zcontext) == FAILURE) {
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	context = php_stream_context_from_zval(zcontext, 0);
+ 	
+@@ -1452,6 +1459,7 @@ PHP_FUNCTION(mkdir)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|lbr", &dir, &dir_len, &mode, &recursive, &zcontext) == FAILURE) {
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(dir, dir_len);
+ 
+ 	context = php_stream_context_from_zval(zcontext, 0);
+ 
+@@ -1471,6 +1479,7 @@ PHP_FUNCTION(rmdir)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|r", &dir, &dir_len, &zcontext) == FAILURE) {
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(dir, dir_len);
+ 
+ 	context = php_stream_context_from_zval(zcontext, 0);
+ 
+@@ -1493,6 +1502,7 @@ PHP_FUNCTION(readfile)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|br!", &filename, &filename_len, &use_include_path, &zcontext) == FAILURE) {
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	context = php_stream_context_from_zval(zcontext, 0);
+ 
+@@ -1567,6 +1577,8 @@ PHP_FUNCTION(rename)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss|r", &old_name, &old_name_len, &new_name, &new_name_len, &zcontext) == FAILURE) {
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(old_name, old_name_len);
++	PHP_NUL_PATH_CHECK(new_name, new_name_len);
+ 
+ 	wrapper = php_stream_locate_url_wrapper(old_name, NULL, 0 TSRMLS_CC);
+ 
+@@ -1604,6 +1616,7 @@ PHP_FUNCTION(unlink)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|r", &filename, &filename_len, &zcontext) == FAILURE) {
+ 		RETURN_FALSE;
+ 	}
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 
+ 	context = php_stream_context_from_zval(zcontext, 0);
+ 
+@@ -1740,6 +1753,8 @@ PHP_FUNCTION(copy)
+ 
+ 	convert_to_string_ex(source);
+ 	convert_to_string_ex(target);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(source), Z_STRLEN_PP(source));
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(target), Z_STRLEN_PP(target));
+ 
+ 	if (PG(safe_mode) &&(!php_checkuid(Z_STRVAL_PP(source), NULL, CHECKUID_CHECK_FILE_AND_DIR))) {
+ 		RETURN_FALSE;
+@@ -2400,6 +2415,7 @@ PHP_FUNCTION(realpath)
+ 	}
+ 
+ 	convert_to_string_ex(path);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(path), Z_STRLEN_PP(path));
+ 
+ 	if (VCWD_REALPATH(Z_STRVAL_PP(path), resolved_path_buff)) {
+ 		if (PG(safe_mode) && (!php_checkuid(resolved_path_buff, NULL, CHECKUID_CHECK_FILE_AND_DIR))) {
+@@ -2546,6 +2562,8 @@ PHP_FUNCTION(fnmatch)
+ 							  &flags) 
+ 		== FAILURE) 
+ 		return;
++	PHP_NUL_PATH_CHECK(pattern, pattern_len);
++	PHP_NUL_PATH_CHECK(filename, filename_len);
+ 	
+ 	if (filename_len >= MAXPATHLEN) {
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Filename exceeds the maximum allowed length of %d characters", MAXPATHLEN);
+diff --git a/ext/standard/filestat.c b/ext/standard/filestat.c
+index 51efeb5dda..54d7de9d29 100644
+--- a/ext/standard/filestat.c
++++ b/ext/standard/filestat.c
+@@ -239,6 +239,7 @@ PHP_FUNCTION(disk_total_space)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &path, &path_len) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(path, path_len);
+ 
+ 	if (php_check_open_basedir(path TSRMLS_CC)) {
+ 		RETURN_FALSE;
+@@ -374,6 +375,7 @@ PHP_FUNCTION(disk_free_space)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &path, &path_len) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(path, path_len);
+ 
+ 	if (php_check_open_basedir(path TSRMLS_CC)) {
+ 		RETURN_FALSE;
+@@ -397,6 +399,7 @@ static void php_do_chgrp(INTERNAL_FUNCTION_PARAMETERS, int do_lchgrp) /* {{{ */
+ 		WRONG_PARAM_COUNT;
+ 	}
+ 	convert_to_string_ex(filename);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(filename), Z_STRLEN_PP(filename));
+ 	if (Z_TYPE_PP(group) == IS_STRING) {
+ #if defined(ZTS) && defined(HAVE_GETGRNAM_R) && defined(_SC_GETGR_R_SIZE_MAX)
+ 		struct group gr;
+@@ -494,6 +497,7 @@ static void php_do_chown(INTERNAL_FUNCTION_PARAMETERS, int do_lchown) /* {{{ */
+ 		WRONG_PARAM_COUNT;
+ 	}
+ 	convert_to_string_ex(filename);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(filename), Z_STRLEN_PP(filename));
+ 	if (Z_TYPE_PP(user) == IS_STRING) {
+ #if defined(ZTS) && defined(_SC_GETPW_R_SIZE_MAX) && defined(HAVE_GETPWNAM_R)
+ 		struct passwd pw;
+@@ -593,6 +597,7 @@ PHP_FUNCTION(chmod)
+ 		WRONG_PARAM_COUNT;
+ 	}
+ 	convert_to_string_ex(filename);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(filename), Z_STRLEN_PP(filename));
+ 	convert_to_long_ex(mode);
+ 
+ 	if (PG(safe_mode) &&(!php_checkuid(Z_STRVAL_PP(filename), NULL, CHECKUID_ALLOW_FILE_NOT_EXISTS))) {
+@@ -668,6 +673,7 @@ PHP_FUNCTION(touch)
+ 		WRONG_PARAM_COUNT;
+ 	}
+ 	convert_to_string_ex(filename);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(filename), Z_STRLEN_PP(filename));
+ 
+ 	if (PG(safe_mode) &&(!php_checkuid(Z_STRVAL_PP(filename), NULL, CHECKUID_CHECK_FILE_AND_DIR))) {
+ 		RETURN_FALSE;
+@@ -748,6 +754,10 @@ PHPAPI void php_stat(const char *filename, php_stat_len filename_length, int typ
+ 	if (!filename_length) {
+ 		RETURN_FALSE;
+ 	}
++	/* a NUL byte would truncate the path (CVE-2006-7243): such a file cannot exist */
++	if (strlen(filename) != (size_t) filename_length) {
++		RETURN_FALSE;
++	}
+ 
+ 	if ((wrapper = php_stream_locate_url_wrapper(filename, &local, 0 TSRMLS_CC)) == &php_plain_files_wrapper) {
+ 		if (php_check_open_basedir(local TSRMLS_CC)) {
+diff --git a/ext/standard/image.c b/ext/standard/image.c
+index 32aec0d332..4f5fa1e7b2 100644
+--- a/ext/standard/image.c
++++ b/ext/standard/image.c
+@@ -1284,6 +1284,8 @@ PHP_FUNCTION(getimagesize)
+ 		WRONG_PARAM_COUNT;
+ 	}
+ 
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(arg1), Z_STRLEN_PP(arg1));
++
+ 	stream = php_stream_open_wrapper(Z_STRVAL_PP(arg1), "rb", STREAM_MUST_SEEK|REPORT_ERRORS|IGNORE_PATH|ENFORCE_SAFE_MODE, NULL);
+ 
+ 	if (!stream) {
+diff --git a/ext/standard/iptc.c b/ext/standard/iptc.c
+index b5c0b2507f..52178cf44c 100644
+--- a/ext/standard/iptc.c
++++ b/ext/standard/iptc.c
+@@ -189,6 +189,7 @@ PHP_FUNCTION(iptcembed)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ss|l", &iptcdata, &iptcdata_len, &jpeg_file, &jpeg_file_len, &spool) != SUCCESS) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(jpeg_file, jpeg_file_len);
+ 
+ 	if (PG(safe_mode) && (!php_checkuid(jpeg_file, NULL, CHECKUID_CHECK_FILE_AND_DIR))) {
+ 		RETURN_FALSE;
+diff --git a/ext/standard/link.c b/ext/standard/link.c
+index 0d07b224b2..95a8b05336 100644
+--- a/ext/standard/link.c
++++ b/ext/standard/link.c
+@@ -63,6 +63,7 @@ PHP_FUNCTION(readlink)
+ 		WRONG_PARAM_COUNT;
+ 	}
+ 	convert_to_string_ex(filename);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(filename), Z_STRLEN_PP(filename));
+ 
+ 	if (PG(safe_mode) && !php_checkuid(Z_STRVAL_PP(filename), NULL, CHECKUID_CHECK_FILE_AND_DIR)) {
+ 		RETURN_FALSE;
+@@ -97,6 +98,7 @@ PHP_FUNCTION(linkinfo)
+ 		WRONG_PARAM_COUNT;
+ 	}
+ 	convert_to_string_ex(filename);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(filename), Z_STRLEN_PP(filename));
+ 
+ 	ret = VCWD_LSTAT(Z_STRVAL_PP(filename), &sb);
+ 	if (ret == -1) {
+@@ -124,6 +126,8 @@ PHP_FUNCTION(symlink)
+ 	}
+ 	convert_to_string_ex(topath);
+ 	convert_to_string_ex(frompath);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(topath), Z_STRLEN_PP(topath));
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(frompath), Z_STRLEN_PP(frompath));
+ 
+ 	if (!expand_filepath(Z_STRVAL_PP(frompath), source_p TSRMLS_CC)) {
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "No such file or directory");
+@@ -189,6 +193,8 @@ PHP_FUNCTION(link)
+ 	}
+ 	convert_to_string_ex(topath);
+ 	convert_to_string_ex(frompath);
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(topath), Z_STRLEN_PP(topath));
++	PHP_NUL_PATH_CHECK(Z_STRVAL_PP(frompath), Z_STRLEN_PP(frompath));
+ 
+ 	if (!expand_filepath(Z_STRVAL_PP(frompath), source_p TSRMLS_CC) || !expand_filepath(Z_STRVAL_PP(topath), dest_p TSRMLS_CC)) {
+ 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "No such file or directory");
+diff --git a/ext/standard/md5.c b/ext/standard/md5.c
+index 29ac3224ec..65a8dfa9a6 100644
+--- a/ext/standard/md5.c
++++ b/ext/standard/md5.c
+@@ -89,6 +89,7 @@ PHP_NAMED_FUNCTION(php_if_md5_file)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|b", &arg, &arg_len, &raw_output) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(arg, arg_len);
+ 	
+ 	stream = php_stream_open_wrapper(arg, "rb", REPORT_ERRORS | ENFORCE_SAFE_MODE, NULL);
+ 	if (!stream) {
+diff --git a/ext/standard/sha1.c b/ext/standard/sha1.c
+index 084de7f1e6..8b48dfc9e3 100644
+--- a/ext/standard/sha1.c
++++ b/ext/standard/sha1.c
+@@ -78,6 +78,7 @@ PHP_FUNCTION(sha1_file)
+ 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|b", &arg, &arg_len, &raw_output) == FAILURE) {
+ 		return;
+ 	}
++	PHP_NUL_PATH_CHECK(arg, arg_len);
+ 	
+ 	stream = php_stream_open_wrapper(arg, "rb", REPORT_ERRORS | ENFORCE_SAFE_MODE, NULL);
+ 	if (!stream) {
+diff --git a/ext/standard/tests/file/copy_variation4-win32.phpt b/ext/standard/tests/file/copy_variation4-win32.phpt
+index 3c5408aeb0c10b5e10aeb2f59d6effa3453082ad..3e5bd51dc6beb3535c58ec3c01f6bb3c0ef85dc3 100644
+GIT binary patch
+delta 169
+zcmdm@I9X{!EBE9de3Fyra`PK&S}6o1mSia8mKK*N<mHzrB<JUqBxdF*_=Wl?BvqEA
+z7ApWbs>KTVc?vn1d8rDjDU<k&S<(`7iYE*3%1`Ftu@6Yf&(F~SiKJ?BafK%q<z?oj
+UTPc+00o7+~kYT~*G#)<|0L&sc$^ZZW
+
+delta 24
+gcmbQNv_)}4EBEAhuI9;RJob|nxb-$);jw1{0B-FFAOHXW
+
+diff --git a/ext/standard/tests/file/copy_variation4.phpt b/ext/standard/tests/file/copy_variation4.phpt
+index 8c6ea1a8237178b00cca46295c49f041eb5b0fc9..cfb1d408873376a5604e5fb07606b2bbbd908287 100644
+GIT binary patch
+delta 152
+zcmX@2{7!kpH}1(C0+N&Yc=(kxtrP+hOEMI4ON&bs^72a*lJoOQ5;OA@{6c*ck}6A5
+ziziRybYV$L%qgDiFDO5GEsy==3!JRpAc0g(F0SyzqP)z!bSs6@yqwIuYz@NZDF6*u
+VEmp|SQvhm6RZvaY%)`5b1psw5GcEuC
+
+delta 24
+gcmaE-d_;M}H}1&}oZBZa=dqtWfm?sGEAL7c0Exc|(EtDd
+
+diff --git a/ext/standard/tests/file/disk_free_space_variation.phpt b/ext/standard/tests/file/disk_free_space_variation.phpt
+index ee72eea465..fffbae5e61 100644
+--- a/ext/standard/tests/file/disk_free_space_variation.phpt
++++ b/ext/standard/tests/file/disk_free_space_variation.phpt
+@@ -105,19 +105,35 @@ float(%d)
+ float(%d)
+ 
+ -- Iteration 9 --
+-float(%d)
+-float(%d)
++
++Warning: disk_free_space(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: diskfreespace(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ 
+ -- Iteration 10 --
+-float(%d)
+-float(%d)
++
++Warning: disk_free_space(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: diskfreespace(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ 
+ -- Iteration 11 --
+-float(%d)
+-float(%d)
++
++Warning: disk_free_space(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: diskfreespace(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ 
+ -- Iteration 12 --
+-float(%d)
+-float(%d)
++
++Warning: disk_free_space(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: diskfreespace(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ 
+ --- Done ---
+diff --git a/ext/standard/tests/file/disk_total_space_variation.phpt b/ext/standard/tests/file/disk_total_space_variation.phpt
+index f722883a3c..74a02af78b 100644
+--- a/ext/standard/tests/file/disk_total_space_variation.phpt
++++ b/ext/standard/tests/file/disk_total_space_variation.phpt
+@@ -94,15 +94,23 @@ float(%d)
+ float(%d)
+ 
+ -- Iteration 9 --
+-float(%d)
++
++Warning: disk_total_space(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ 
+ -- Iteration 10 --
+-float(%d)
++
++Warning: disk_total_space(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ 
+ -- Iteration 11 --
+-float(%d)
++
++Warning: disk_total_space(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ 
+ -- Iteration 12 --
+-float(%d)
++
++Warning: disk_total_space(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ 
+ --- Done ---
+diff --git a/ext/standard/tests/file/file_get_contents_variation8-win32.phpt b/ext/standard/tests/file/file_get_contents_variation8-win32.phpt
+index 8598f4335f..981cb56745 100644
+--- a/ext/standard/tests/file/file_get_contents_variation8-win32.phpt
++++ b/ext/standard/tests/file/file_get_contents_variation8-win32.phpt
+@@ -77,7 +77,7 @@ bool(false)
+ 
+ -- Filename: \0 --
+ 
+-Warning: file_get_contents(): Filename cannot be empty in %s on line %d
++Warning: file_get_contents(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ 
+ -- Filename: array() --
+diff --git a/ext/standard/tests/file/file_get_contents_variation8.phpt b/ext/standard/tests/file/file_get_contents_variation8.phpt
+index c7d1c171e1..9b62e5516e 100644
+--- a/ext/standard/tests/file/file_get_contents_variation8.phpt
++++ b/ext/standard/tests/file/file_get_contents_variation8.phpt
+@@ -69,7 +69,7 @@ Warning: file_get_contents( ): failed to open stream: No such file or directory
+ bool(false)
+ -- Iteration 6 --
+ 
+-Warning: file_get_contents(): Filename cannot be empty in %s on line %d
++Warning: file_get_contents(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ -- Iteration 7 --
+ 
+diff --git a/ext/standard/tests/file/file_put_contents_variation8-win32.phpt b/ext/standard/tests/file/file_put_contents_variation8-win32.phpt
+index 1609b10e12..ba5b2b473d 100644
+--- a/ext/standard/tests/file/file_put_contents_variation8-win32.phpt
++++ b/ext/standard/tests/file/file_put_contents_variation8-win32.phpt
+@@ -78,7 +78,7 @@ Failed to write data to: " "
+ 
+ -- Filename: \0 --
+ 
+-Warning: file_put_contents(): Filename cannot be empty in %s on line %d
++Warning: file_put_contents(): Path must not contain NUL bytes in %s on line %d
+ Failed to write data to: \0
+ 
+ -- Filename: array() --
+diff --git a/ext/standard/tests/file/file_put_contents_variation8.phpt b/ext/standard/tests/file/file_put_contents_variation8.phpt
+index 1407a81dbb26bc026703d8f980a432a7f2497428..27a9e0b6daf2271f0bc87ddf1ef73a6ee449b0e3 100644
+GIT binary patch
+delta 48
+zcmeAYnjo}6hFv}&u_Qwwx3suKAuqo~Avr&<Br!8j!7tQDA*r$?wRrMAcJ0ma?5h|7
+Dkbn@u
+
+delta 18
+ZcmbOr)Fre*hJA89oAc&0_En6GTmU#K1w#M;
+
+diff --git a/ext/standard/tests/file/filegroup_variation3.phpt b/ext/standard/tests/file/filegroup_variation3.phpt
+index dd875a082b..c41f383632 100644
+--- a/ext/standard/tests/file/filegroup_variation3.phpt
++++ b/ext/standard/tests/file/filegroup_variation3.phpt
+@@ -74,8 +74,8 @@ bool(false)
+ Warning: filegroup(): stat failed for %s/filegroup_variation3/filegroup*.tmp in %s on line %d
+ bool(false)
+ - Iteration 7 -
+-int(%d)
++bool(false)
+ - Iteration 8 -
+-int(%d)
++bool(false)
+ 
+ *** Done ***
+diff --git a/ext/standard/tests/file/fileinode_variation3.phpt b/ext/standard/tests/file/fileinode_variation3.phpt
+index c81b573246..23cf3c7c7e 100644
+--- a/ext/standard/tests/file/fileinode_variation3.phpt
++++ b/ext/standard/tests/file/fileinode_variation3.phpt
+@@ -75,8 +75,8 @@ bool(false)
+ Warning: fileinode(): stat failed for %s/fileinode_variation3/fileinode*.tmp in %s on line %d
+ bool(false)
+ - Iteration 7 -
+-int(%d)
++bool(false)
+ - Iteration 8 -
+-int(%d)
++bool(false)
+ 
+ *** Done ***
+diff --git a/ext/standard/tests/file/fileowner_variation3.phpt b/ext/standard/tests/file/fileowner_variation3.phpt
+index 2a322b6dbc..b2691e923d 100644
+--- a/ext/standard/tests/file/fileowner_variation3.phpt
++++ b/ext/standard/tests/file/fileowner_variation3.phpt
+@@ -75,8 +75,8 @@ bool(false)
+ Warning: fileowner(): stat failed for %s/fileowner_variation3/fileowner*.tmp in %s on line %d
+ bool(false)
+ - Iteration 7 -
+-int(%d)
++bool(false)
+ - Iteration 8 -
+-int(%d)
++bool(false)
+ 
+ *** Done ***
+diff --git a/ext/standard/tests/file/fileperms_variation3.phpt b/ext/standard/tests/file/fileperms_variation3.phpt
+index 38101e363c..1e7396a503 100644
+--- a/ext/standard/tests/file/fileperms_variation3.phpt
++++ b/ext/standard/tests/file/fileperms_variation3.phpt
+@@ -74,8 +74,8 @@ bool(false)
+ Warning: fileperms(): stat failed for %s/fileperms_variation3/fileperms*.tmp in %s on line %d
+ bool(false)
+ - Iteration 7 -
+-int(%d)
++bool(false)
+ - Iteration 8 -
+-int(%d)
++bool(false)
+ 
+ *** Done ***
+diff --git a/ext/standard/tests/file/fnmatch_variation.phpt b/ext/standard/tests/file/fnmatch_variation.phpt
+index 03e8de72e8..f03e3ab319 100644
+--- a/ext/standard/tests/file/fnmatch_variation.phpt
++++ b/ext/standard/tests/file/fnmatch_variation.phpt
+@@ -168,8 +168,12 @@ bool(false)
+ -- Iteration 22 --
+ bool(false)
+ -- Iteration 23 --
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ -- Iteration 24 --
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ -- Iteration 25 --
+ bool(false)
+@@ -234,32 +238,64 @@ bool(true)
+ --- With Strings ---
+ -- Iteration 0 --
+ bool(true)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ bool(true)
+-bool(true)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ bool(false)
+ -- Iteration 1 --
+-bool(true)
+-bool(true)
+-bool(true)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ -- Iteration 2 --
+ bool(true)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ bool(true)
+-bool(true)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ bool(false)
+ -- Iteration 3 --
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+-bool(true)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ -- Iteration 4 --
+ bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ bool(true)
+ 
+@@ -360,34 +396,54 @@ bool(true)
+ bool(true)
+ bool(true)
+ bool(true)
+-bool(true)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ bool(false)
+ bool(false)
+ -- Iteration 1 --
+ bool(true)
+ bool(true)
+ bool(true)
+-bool(true)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ bool(false)
+ bool(false)
+ -- Iteration 2 --
+ bool(true)
+ bool(true)
+ bool(true)
+-bool(true)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ bool(false)
+ bool(false)
+ -- Iteration 3 --
+-bool(true)
+-bool(true)
+-bool(true)
+-bool(true)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ -- Iteration 4 --
+ bool(false)
+ bool(false)
+ bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ bool(true)
+ bool(false)
+@@ -395,6 +451,8 @@ bool(false)
+ bool(false)
+ bool(false)
+ bool(false)
++
++Warning: fnmatch(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ bool(false)
+ bool(true)
+diff --git a/ext/standard/tests/file/glob_variation-win32.phpt b/ext/standard/tests/file/glob_variation-win32.phpt
+index f3a3ff0e81..beca5e9685 100644
+--- a/ext/standard/tests/file/glob_variation-win32.phpt
++++ b/ext/standard/tests/file/glob_variation-win32.phpt
+@@ -325,20 +325,24 @@ array(0) {
+ }
+ 
+ -- Iteration 8 --
+-array(0) {
+-}
+-array(0) {
+-}
+-array(0) {
+-}
+-array(1) {
+-  [0]=>
+-  string(%d) "%s/glob_variation/WONDER5"
+-}
+-array(0) {
+-}
+-array(0) {
+-}
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ 
+ -- Iteration 9 --
+ array(0) {
+@@ -441,8 +445,9 @@ array(1) {
+ array(0) {
+ }
+ -- Iteration 8 --
+-array(0) {
+-}
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ -- Iteration 9 --
+ array(0) {
+ }
+diff --git a/ext/standard/tests/file/glob_variation.phpt b/ext/standard/tests/file/glob_variation.phpt
+index 52c0dc8e47..7b31d3327f 100755
+--- a/ext/standard/tests/file/glob_variation.phpt
++++ b/ext/standard/tests/file/glob_variation.phpt
+@@ -325,20 +325,24 @@ array(0) {
+ }
+ 
+ -- Iteration 8 --
+-array(0) {
+-}
+-array(0) {
+-}
+-array(0) {
+-}
+-array(1) {
+-  [0]=>
+-  string(%d) "%s/glob_variation/WONDER5"
+-}
+-array(0) {
+-}
+-array(0) {
+-}
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ 
+ -- Iteration 9 --
+ array(0) {
+@@ -441,8 +445,9 @@ array(1) {
+ array(0) {
+ }
+ -- Iteration 8 --
+-array(0) {
+-}
++
++Warning: glob(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ -- Iteration 9 --
+ array(0) {
+ }
+diff --git a/ext/standard/tests/file/is_dir_variation4.phpt b/ext/standard/tests/file/is_dir_variation4.phpt
+index a68fe0b005..b83d185b65 100644
+--- a/ext/standard/tests/file/is_dir_variation4.phpt
++++ b/ext/standard/tests/file/is_dir_variation4.phpt
+@@ -77,9 +77,9 @@ bool(true)
+ bool(false)
+ 
+ -- Iteration 9 --
+-bool(true)
++bool(false)
+ 
+ -- Iteration 10 --
+-bool(true)
++bool(false)
+ 
+ *** Done ***
+diff --git a/ext/standard/tests/file/is_file_variation4.phpt b/ext/standard/tests/file/is_file_variation4.phpt
+index 55aeedfaad..fbdf438945 100644
+--- a/ext/standard/tests/file/is_file_variation4.phpt
++++ b/ext/standard/tests/file/is_file_variation4.phpt
+@@ -67,8 +67,8 @@ bool(false)
+ - Iteration 6 -
+ bool(false)
+ - Iteration 7 -
+-bool(true)
++bool(false)
+ - Iteration 8 -
+-bool(true)
++bool(false)
+ 
+ *** Done ***
+diff --git a/ext/standard/tests/file/readfile_variation10-win32.phpt b/ext/standard/tests/file/readfile_variation10-win32.phpt
+index d4cad6c1e8..5111ed303c 100644
+--- a/ext/standard/tests/file/readfile_variation10-win32.phpt
++++ b/ext/standard/tests/file/readfile_variation10-win32.phpt
+@@ -71,7 +71,7 @@ Warning: readfile( ): failed to open stream: Permission denied in %s on line %d
+ 
+ -- Filename: \0 --
+ 
+-Warning: readfile(): Filename cannot be empty in %s on line %d
++Warning: readfile(): Path must not contain NUL bytes in %s on line %d
+ 
+ -- Filename: array() --
+ 
+diff --git a/ext/standard/tests/file/readfile_variation10.phpt b/ext/standard/tests/file/readfile_variation10.phpt
+index 7072830da9f9dbfa11b32c42f8475ed67516e04c..ced1dd35c628ff06fc10f87a6131418d46da95b7 100644
+GIT binary patch
+delta 48
+zcmey%+swCN0jqpKVo8QVZfS9eLSBA}LUMjyNn&Q6f?ueQLQ-W(YVqWQEOMK#v8piw
+E0JwG$ga7~l
+
+delta 18
+acmZqX`^&pw0qf*nEM}YUvZ^sMasdEIfd+p7
+
+diff --git a/ext/standard/tests/file/rename_variation13-win32.phpt b/ext/standard/tests/file/rename_variation13-win32.phpt
+index 1407c01c27..eb7f935b9c 100644
+--- a/ext/standard/tests/file/rename_variation13-win32.phpt
++++ b/ext/standard/tests/file/rename_variation13-win32.phpt
+@@ -107,10 +107,10 @@ Warning: rename( ,%s/renameVar13/afile.tmp): %s in %s on line %d
+ bool(false)
+ -- testing '%s' --
+ 
+-Warning: rename(%s/renameVar13/afile.tmp,): %s in %s on line %d
++Warning: rename(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ 
+-Warning: rename(,%s/renameVar13/afile.tmp): %s in %s on line %d
++Warning: rename(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ -- testing 'Array' --
+ 
+diff --git a/ext/standard/tests/file/rename_variation13.phpt b/ext/standard/tests/file/rename_variation13.phpt
+index d3082ab383..83b4ee7547 100644
+--- a/ext/standard/tests/file/rename_variation13.phpt
++++ b/ext/standard/tests/file/rename_variation13.phpt
+@@ -100,10 +100,10 @@ Warning: rename( ,%s/renameVar13/afile.tmp): No such file or directory in %s on
+ bool(false)
+ -- testing '%s' --
+ 
+-Warning: rename(%s/renameVar13/afile.tmp,): %s in %s on line %d
++Warning: rename(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ 
+-Warning: rename(,%s/renameVar13/afile.tmp): No such file or directory in %s on line %d
++Warning: rename(): Path must not contain NUL bytes in %s on line %d
+ bool(false)
+ -- testing 'Array' --
+ 
+@@ -129,4 +129,4 @@ bool(false)
+ Warning: rename(php/php,%s/renameVar13/afile.tmp): %s directory in %s on line %d
+ bool(false)
+ 
+-*** Done ***
+\ No newline at end of file
++*** Done ***
+diff --git a/ext/standard/tests/file/stream_rfc2397_006.phpt b/ext/standard/tests/file/stream_rfc2397_006.phpt
+index 06734fba35..063e0d6e5f 100755
+--- a/ext/standard/tests/file/stream_rfc2397_006.phpt
++++ b/ext/standard/tests/file/stream_rfc2397_006.phpt
+@@ -19,8 +19,11 @@ foreach($streams as $stream)
+ ===DONE===
+ <?php exit(0); ?>
+ --EXPECTF--
+-string(0) ""
+-string(6) "foobar"
++Warning: file_get_contents(): Path must not contain NUL bytes in %s on line %d
++bool(false)
++
++Warning: file_get_contents(): Path must not contain NUL bytes in %s on line %d
++bool(false)
+ string(13) "foobar foobar"
+ 
+ Warning: file_get_contents(data:;base64,#Zm9vYmFyIGZvb2Jhc=): failed to open stream: rfc2397: unable to decode in %sstream_rfc2397_006.php on line %d
+diff --git a/ext/standard/tests/file/tempnam_variation3-win32.phpt b/ext/standard/tests/file/tempnam_variation3-win32.phpt
+index da0133af9d..751525785b 100644
+--- a/ext/standard/tests/file/tempnam_variation3-win32.phpt
++++ b/ext/standard/tests/file/tempnam_variation3-win32.phpt
+@@ -98,9 +98,11 @@ File name is => %s\%s
+ File permissions are => 100666
+ File created in => directory specified
+ -- Iteration 6 --
+-File name is => %s\%s
+-File permissions are => 100666
+-File created in => directory specified
++
++Warning: tempnam(): Path must not contain NUL bytes in %s on line %d
++-- File is not created --
++
++Warning: unlink(): %s in %s on line %d
+ -- Iteration 7 --
+ 
+ Notice: Array to string conversion in %s on line %d
+diff --git a/ext/standard/tests/file/tempnam_variation3.phpt b/ext/standard/tests/file/tempnam_variation3.phpt
+index e350849fd9..8de5731e09 100644
+--- a/ext/standard/tests/file/tempnam_variation3.phpt
++++ b/ext/standard/tests/file/tempnam_variation3.phpt
+@@ -100,9 +100,11 @@ File name is => %s/%s
+ File permissions are => 100600
+ File created in => directory specified
+ -- Iteration 6 --
+-File name is => %s/%s
+-File permissions are => 100600
+-File created in => directory specified
++
++Warning: tempnam(): Path must not contain NUL bytes in %s on line %d
++-- File is not created --
++
++Warning: unlink(): No such file or directory in %s on line %d
+ -- Iteration 7 --
+ 
+ Notice: Array to string conversion in %s on line %d
+diff --git a/ext/standard/tests/file/tempnam_variation7-win32.phpt b/ext/standard/tests/file/tempnam_variation7-win32.phpt
+index 98fd2ba378..01c1781ba5 100644
+--- a/ext/standard/tests/file/tempnam_variation7-win32.phpt
++++ b/ext/standard/tests/file/tempnam_variation7-win32.phpt
+@@ -92,9 +92,11 @@ File name is => %s%et%s
+ File permissions are => 100666
+ File created in => temp dir
+ -- Iteration 6 --
+-File name is => %s%et%s
+-File permissions are => 100666
+-File created in => temp dir
++
++Warning: tempnam(): Path must not contain NUL bytes in %s on line %d
++-- File is not created --
++
++Warning: unlink(): %s in %s on line %d
+ -- Iteration 7 --
+ 
+ Notice: Array to string conversion in %s on line %d
+diff --git a/ext/standard/tests/file/tempnam_variation7.phpt b/ext/standard/tests/file/tempnam_variation7.phpt
+index 65001207e9..3b253fb4d2 100644
+--- a/ext/standard/tests/file/tempnam_variation7.phpt
++++ b/ext/standard/tests/file/tempnam_variation7.phpt
+@@ -94,9 +94,11 @@ File name is => %s%etempnam_variation3.tmp%s
+ File permissions are => 100600
+ File created in => temp dir
+ -- Iteration 6 --
+-File name is => %s%etempnam_variation3.tmp%s
+-File permissions are => 100600
+-File created in => temp dir
++
++Warning: tempnam(): Path must not contain NUL bytes in %s on line %d
++-- File is not created --
++
++Warning: unlink(): No such file or directory in %s on line %d
+ -- Iteration 7 --
+ 
+ Notice: Array to string conversion in %s on line %d
+diff --git a/main/php.h b/main/php.h
+index 4616d9b760..46bdef3847 100644
+--- a/main/php.h
++++ b/main/php.h
+@@ -309,6 +309,17 @@ END_EXTERN_C()
+ 
+ #define php_error_docref php_error_docref0
+ 
++/* A path containing a NUL byte would be silently truncated by the C file APIs (CVE-2006-7243 and
++ * its follow-ups, backported): check right after the argument parsing of a function that
++ * returns FALSE (or, with the _NULL variant, NULL) on failure. */
++#define PHP_NUL_PATH_CHECK_RET(path, path_len, failure) \
++	if (strlen(path) != (size_t) (path_len)) { \
++		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Path must not contain NUL bytes"); \
++		failure; \
++	}
++#define PHP_NUL_PATH_CHECK(path, path_len) PHP_NUL_PATH_CHECK_RET(path, path_len, RETURN_FALSE)
++#define PHP_NUL_PATH_CHECK_NULL(path, path_len) PHP_NUL_PATH_CHECK_RET(path, path_len, RETURN_NULL())
++
+ #define zenderror phperror
+ #define zendlex phplex
+ 
+-- 
+2.55.0.windows.5
+

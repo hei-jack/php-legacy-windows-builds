@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: lpgauthier <lpgauthier@circworld.qc.ca>
 Date: Thu, 22 Oct 2026 15:45:56 -0400
-Subject: [PATCH 06/22] Always restore magic_quotes_gpc after importing
+Subject: [PATCH 06/27] Always restore magic_quotes_gpc after importing
  environment (CVE-2012-0831)
 
 magic_quotes_gpc was switched off by writing PG() directly while

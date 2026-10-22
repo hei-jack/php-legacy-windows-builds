@@ -37,7 +37,15 @@ standard, session, SPL, pcre, date, xml/dom/libxml, ftp, calendar, ...).
 | 19 | CVE-2015-4602 | type confusion in `__PHP_Incomplete_Class` (unserialize) | Debian squeeze-lts |
 | 20 | CVE-2014-3669 | integer overflow in `unserialize()` on 32-bit | CentOS 5 php53 |
 | 21 | CVE-2015-2787 | use-after-free in `unserialize()` via `__wakeup` | Debian squeeze-lts + NULL guard |
-| 22 | — | version string `5.2.17-cve2026` | |
+| 22 | CVE-2014-3515, CVE-2015-6831, CVE-2015-6834 | `SplObjectStorage::unserialize()`: non-array members (one line of serialized data segfaults stock 5.2.17), values kept alive for back-references | CentOS 5 php53, Debian squeeze-lts |
+| 23 | CVE-2015-6835 | use-after-free in the session deserializers (reproduced on stock 5.2.17) | Debian squeeze-lts (prepared, never applied by Debian) |
+| 24–26 | CVE-2006-7243, CVE-2015-2348, CVE-2015-3411/3412, CVE-2015-4025, CVE-2015-4598 | paths containing a NUL byte are rejected instead of silently truncated: include/require and about 60 functions and methods (file, dir, stat, link, hash, dom, xmlreader/writer, simplexml, zlib, SPL) | CentOS 5 php53, Debian squeeze-lts, written for 5.2's argument parsing |
+| 27 | — | version string `5.2.17-cve2026` | |
+
+CVE-2015-6834's other part (bug #70172, nested `unserialize()`) does not apply: it needs the
+shared unserialize state of PHP 5.6, and 5.2 gives every nested call its own (checked with the
+upstream test; upstream's "no objects without var_hash" change was left out because php_pdo's
+`FETCH_SERIALIZE` relies on it).
 
 The vendor patches were taken from the last Debian squeeze-lts (php5 5.3.3.1-7+squeeze29),
 Debian lenny (5.2.6.dfsg.1-1+lenny16), Ubuntu hardy (5.2.4-2ubuntu5.27) and CentOS 5.11
@@ -60,6 +68,13 @@ binary interface; `check.cmd` verifies the exports.
   wins.
 - An upload whose field name has unbalanced brackets (`file[`) is ignored.
 - `header()` refuses a value with a bare CR or a NUL byte.
+- A path with a NUL byte gives the warning "Path must not contain NUL bytes" and FALSE (an
+  exception for the SPL constructors; `include` fails like a missing file, `require` is fatal).
+  `file_exists()`, `is_file()`, `stat()` and the like just return FALSE.
+- `session_decode()` returns FALSE (and the session is destroyed, with the existing warning) when
+  the session data is corrupt, instead of loading part of it and returning TRUE.
+- `SplObjectStorage::unserialize()` throws `UnexpectedValueException` when the members part is
+  not an array.
 - `version_compare(PHP_VERSION, '5.2.17')` is `-1` because of the `-cve2026` suffix (comparisons
   with any other version are unchanged).
 - libxml2 2.9 rejects some pathological XML that 2.7 accepted (e.g. text nodes over 10 MB without
@@ -70,11 +85,10 @@ binary interface; `check.cmd` verifies the exports.
 - **Extensions shipped as DLLs** (php_mysql, php_gd2, php_curl, php_openssl, php_soap, php_mbstring,
   php_exif, ...): they are the official 2011 binaries with their own unfixed CVEs, and so are their
   libraries (OpenSSL 0.9.8, libmysql, ...). Only load the ones the application uses.
-- Not yet ported (from the vendor inventory, in rough priority order): the remaining
-  `unserialize()` use-after-frees (CVE-2015-6834, CVE-2015-6831/CVE-2014-3515 SplObjectStorage,
-  session CVE-2015-6835), the NUL-byte-in-path family (CVE-2006-7243, CVE-2015-2348,
-  CVE-2015-3411/3412, CVE-2015-4025, CVE-2015-4598), XXE in libxml/SOAP (CVE-2013-1643: don't
-  parse user-supplied XML with `LIBXML_NOENT` / `LIBXML_DTDLOAD`).
+- NUL-byte path checks in the extension DLLs (gd, zip, bz2, openssl, ...) and in com_dotnet /
+  odbc (built in, but Windows/ODBC-specific code that can't be validated outside the VM).
+- XXE in libxml/SOAP (CVE-2013-1643): don't parse user-supplied XML with `LIBXML_NOENT` /
+  `LIBXML_DTDLOAD`.
 - Hash-collision DoS through `json_decode()` / `unserialize()` of attacker data (no distro fixed it).
 
 ## Build (route A: core only, VC6)
@@ -118,22 +132,28 @@ display_startup_errors = Off      ; with On, a startup warning stops POST parsin
 with the modules the Windows php5ts.dll has built in, and runs the Zend, tests, standard,
 session, SPL, date, pcre, reflection, bcmath, calendar, ctype, ftp, hash, filter, json, iconv,
 libxml, dom, simplexml, xml, xmlreader, xmlwriter, wddx, tokenizer and zlib suites, plus
-thread-safe and debug builds against the targeted tests in `php52/tests`.
-`regen-re2c.sh` regenerates `var_unserializer.c` after a change to the `.re` file.
+thread-safe and debug builds against the targeted tests in `php52/tests`, and a C89 check
+(`-Wdeclaration-after-statement`: VC6 rejects declarations after statements).
+Patches are applied with `git apply`, as `fetch.ps1` does: a few test files contain NUL bytes and
+come as git binary patches. `regen-re2c.sh` regenerates `var_unserializer.c` after a change to
+the `.re` file; `Zend/zend_vm_execute.h` is regenerated with `Zend/zend_vm_gen.php` (both
+reproduce the tarball's files byte for byte before any change).
 
-Results for this series (22 Oct 2026), about 6,080 tests:
+Results for this series (22 Oct 2026), about 6,085 tests:
 
-| Build | Suites | Targeted (9) |
+| Build | Suites | Targeted (10) |
 |---|---|---|
-| 5.2.17 tarball | 24 failed | 4 passed, 5 failed (no fixes) |
-| patched | same failures; the 8 tests the patches add pass (bug68044's expectation was corrected after the full run and re-run on its own) | 9 passed |
-| patched, thread-safe | — | 9 passed |
-| patched, debug | — | 9 passed |
+| 5.2.17 tarball | 25 failed | 4 passed, 6 failed (no fixes) |
+| patched | the same 25 failures; the 10 tests the patches add pass | 10 passed |
+| patched, thread-safe | — | 10 passed |
+| patched, debug | — | 10 passed |
+| patched, C89 check | 0 mixed declarations | — |
 
-`ext/dom/tests/dom007.phpt` fails now and then on both builds (it depends on libxml2's hash
-order, which libxml2 2.8 randomizes). The debug build's "implicit declaration" warning is
-`php_dirname` in ext/xmlwriter, an upstream 5.2.17 issue in a file the patches don't touch.
-No mixed declarations (VC6 is C89): checked with `-Wdeclaration-after-statement`.
+Some upstream tests are timing- or order-dependent and fail now and then on either build
+(`ext/dom/tests/dom007.phpt`, which depends on libxml2's randomized hash order;
+`ext/standard/tests/misc/time_sleep_until_basic.phpt`). The debug build's "implicit
+declaration" warning is `php_dirname` in ext/xmlwriter, an upstream 5.2.17 issue in a file the
+patches don't touch.
 
 The same checks have **not** been run on a VC6 build yet: `check.cmd` does that on the build VM.
 `fetch.ps1` was tested end to end (the kit's patched tree is byte-identical to the validated one),

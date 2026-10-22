@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: lpgauthier <lpgauthier@circworld.qc.ca>
 Date: Thu, 22 Oct 2026 15:49:10 -0400
-Subject: [PATCH 15/22] Fix buffer overrun in snprintf with a huge precision
+Subject: [PATCH 15/27] Fix buffer overrun in snprintf with a huge precision
  (CVE-2011-1464)
 
 Source: Debian squeeze-lts php5 5.3.3.1-7+squeeze29, debian/patches/php5-CVE-2011-1464.patch.
