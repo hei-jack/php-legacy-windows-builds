@@ -14,13 +14,16 @@ rem   VC6DIR  defaults to C:\Program Files\Microsoft Visual Studio\VC98
 rem   PSDKDIR folder with SetEnv.Bat/SetEnv.Cmd; defaults to C:\Program Files\Microsoft SDK
 rem           (February 2003), else C:\Program Files\Microsoft Platform SDK (Server 2003 SP1).
 rem           If the SDK environment is already set in this window, that is used as is.
-rem   APACHE22=<dir with include\ and lib\ of Apache 2.2> also builds php5apache2_2.dll (TS)
+rem   APACHE22  dir with include\ and lib\ of Apache 2.2, to also build php5apache2_2.dll (TS);
+rem             defaults to the kit's apache22 folder (from fetch.ps1). Set APACHE22=none to skip.
 
 setlocal EnableExtensions EnableDelayedExpansion
 for %%I in ("%~dp0..") do set "KIT=%%~fI"
 set "WHAT=%~1"
 if "%WHAT%"=="" set WHAT=all
 set "LOG=%KIT%\build.log"
+if not defined APACHE22 if exist "%KIT%\apache22\include\httpd.h" set "APACHE22=%KIT%\apache22"
+if /i "%APACHE22%"=="none" set APACHE22=
 echo. > "%LOG%"
 
 rem ---------------------------------------------------------------- toolchain
@@ -140,12 +143,24 @@ call buildconf.bat >>"%LOG%" 2>&1
 if not exist configure.js (popd & echo buildconf did not create configure.js & exit /b 1)
 set "CFG=--with-php-build=%PB% --enable-cli-win32"
 if /i "%FL%"=="ts" (set "CFG=!CFG! --enable-isapi") else (set "CFG=!CFG! --disable-zts")
-if /i "%FL%"=="ts" if defined APACHE22 set "CFG=!CFG! --enable-apache2-2handler --with-apache-includes=%APACHE22%\include --with-apache-libs=%APACHE22%\lib"
+rem The Apache 2.2 module: PHP 5.2's configure only looks in php_build\include\apache2_2 and
+rem php_build\lib\apache2_2 for Apache's headers and import libraries.
+if /i "%FL%"=="ts" if defined APACHE22 (
+  if not exist "%PB%\include\apache2_2" mkdir "%PB%\include\apache2_2"
+  if not exist "%PB%\lib\apache2_2" mkdir "%PB%\lib\apache2_2"
+  xcopy /e /i /q /y "%APACHE22%\include" "%PB%\include\apache2_2" >nul
+  for %%L in (libhttpd.lib libapr-1.lib libaprutil-1.lib) do copy /y "%APACHE22%\lib\%%L" "%PB%\lib\apache2_2\" >nul
+  set "CFG=!CFG! --enable-apache2-2handler"
+)
 call :log "PHP %FL%: configure !CFG!"
 cscript //nologo configure.js !CFG! > "%KIT%\configure-%FL%.log" 2>&1 || (popd & exit /b 1)
 call :log "PHP %FL%: nmake"
 nmake /nologo >> "%KIT%\nmake-%FL%.log" 2>&1 || (popd & echo see %KIT%\nmake-%FL%.log & exit /b 1)
 popd
+if /i "%FL%"=="ts" if defined APACHE22 if not exist "%SRC%\Release_TS\php5apache2_2.dll" (
+  echo php5apache2_2.dll was not built - see "Could not find apache2.2" in %KIT%\configure-ts.log
+  exit /b 1
+)
 
 rem dist = official zip + our core binaries
 if /i "%FL%"=="ts" (set "REL=Release_TS" & set "DLL=php5ts.dll" & set "OFF=%KIT%\official\ts") else (set "REL=Release" & set "DLL=php5.dll" & set "OFF=%KIT%\official\nts")

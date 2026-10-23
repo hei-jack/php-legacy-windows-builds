@@ -114,10 +114,12 @@ binary interface; `check.cmd` verifies the exports.
    `bufferoverflowu.lib`, which its `/GS`-compiled libraries need. If its headers trip VC6, the
    errors are at the top of `nmake-ts.log`.
 3. On the VM: `C:\php52kit\kit\build.cmd` (or `build.cmd ts` / `build.cmd nts`). Set `VC6DIR` /
-   `PSDKDIR` if they are not in the default folders; set `APACHE22` to also build
-   `php5apache2_2.dll`. It builds zlib, libiconv and libxml2 as static libraries, then PHP, and
-   writes `dist\php-5.2.17-cve2026-{ts,nts}-Win32-VC6-x86`: the official zip with the rebuilt core
-   files laid over it.
+   `PSDKDIR` if they are not in the default folders. It builds zlib, libiconv and libxml2 as
+   static libraries, then PHP, and writes `dist\php-5.2.17-cve2026-{ts,nts}-Win32-VC6-x86`: the
+   official zip with the rebuilt core files laid over it. The TS build also includes the Apache 2.2
+   module `php5apache2_2.dll`, compiled against the headers and import libraries of Apache's own
+   2.2.25 Win32 build (also VC6), which `fetch.ps1` extracts from its MSI into `apache22\`; it
+   loads in any Apache 2.2.x. `APACHE22=none` skips it.
 4. `C:\php52kit\kit\check.cmd` (add `full` for the full test suites, slow): export/ABI check
    against what the official extensions import, every official extension loaded with both the
    rebuilt and the official PHP, and the targeted tests.

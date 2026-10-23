@@ -10,6 +10,7 @@
     <Out>\src\php-5.2.17          release tarball + php52\patches applied
     <Out>\deps\zlib-*, libiconv-*, libxml2-*   dependency sources (built on the VM)
     <Out>\official\ts, \nts       official php-5.2.17 VC6 zips (their ext\*.dll are reused)
+    <Out>\apache22\include, \lib  Apache 2.2 headers and import libraries (for php5apache2_2.dll)
     <Out>\kit\                    build.cmd and the check scripts
     <Out>\tests\                  targeted .phpt tests
 
@@ -50,6 +51,10 @@ $downloads = @(
        Sha = 'e78c347a1a0cb15f2648519e9799151f4b4a934b61ad9ee7424478efe2b8257f' }
     @{ Name = 'libxml2-2.9.14.tar.xz';            Url = 'https://download.gnome.org/sources/libxml2/2.9/libxml2-2.9.14.tar.xz';
        Sha = '60d74a257d1ccec0475e749cba2f21559e48139efba6ff28224357c7c798dfee' }
+    # Apache's own 2.2 Win32 build (VC6): its headers and import libraries build php5apache2_2.dll
+    # (MD5/SHA-1 match archive.apache.org's .md5/.sha1 files)
+    @{ Name = 'httpd-2.2.25-win32-x86-no_ssl.msi'; Url = 'https://archive.apache.org/dist/httpd/binaries/win32/httpd-2.2.25-win32-x86-no_ssl.msi';
+       Sha = 'cee8800d2f9f15dad1e3d1e7f2d2e1b331b5a39461fe6855d63c94c8f8baef9c' }
 )
 
 function Step($msg) { Write-Host "[$(Get-Date -Format HH:mm:ss)] $msg" }
@@ -106,6 +111,21 @@ foreach ($flavor in @(@{ Dir = 'ts'; Zip = 'php-5.2.17-Win32-VC6-x86.zip' }, @{ 
     Expand-Archive -Path "$Out\downloads\$($flavor.Zip)" -DestinationPath $dest
 }
 Step 'official 5.2.17 zips extracted'
+
+# Apache 2.2 headers and import libraries: an administrative install unpacks the MSI without
+# installing Apache
+$ax = "$Out\downloads\apache22-msi"
+if (Test-Path $ax) { Remove-Item -Recurse -Force $ax }
+$p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList '/a', "`"$Out\downloads\httpd-2.2.25-win32-x86-no_ssl.msi`"", '/qn', "TARGETDIR=`"$ax`""
+if ($p.ExitCode -ne 0) { throw "msiexec /a failed ($($p.ExitCode))" }
+$apache = Get-ChildItem -Recurse -Directory $ax -Filter Apache2.2 | Select-Object -First 1
+if (-not $apache -or -not (Test-Path "$($apache.FullName)\include\httpd.h")) { throw 'Apache 2.2 headers not found in the MSI' }
+if (Test-Path "$Out\apache22") { Remove-Item -Recurse -Force "$Out\apache22" }
+New-Item -ItemType Directory -Force "$Out\apache22\lib" | Out-Null
+Copy-Item -Recurse "$($apache.FullName)\include" "$Out\apache22\include"
+foreach ($lib in 'libhttpd.lib', 'libapr-1.lib', 'libaprutil-1.lib') { Copy-Item "$($apache.FullName)\lib\$lib" "$Out\apache22\lib\" }
+Remove-Item -Recurse -Force $ax
+Step 'Apache 2.2.25 headers and libraries extracted'
 
 Copy-Item -Recurse -Force "$here\*" "$Out\kit\"
 Copy-Item -Force "$php52\tests\*.phpt" "$Out\tests\"
