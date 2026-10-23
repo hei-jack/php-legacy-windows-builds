@@ -42,7 +42,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  ext/standard/link.c                           |   6 ++
  ext/standard/md5.c                            |   1 +
  ext/standard/sha1.c                           |   1 +
- .../tests/file/copy_variation4-win32.phpt     | Bin 4276 -> 4371 bytes
+ .../tests/file/copy_variation4-win32.phpt     | Bin 4276 -> 4199 bytes
  ext/standard/tests/file/copy_variation4.phpt  | Bin 4548 -> 4590 bytes
  .../tests/file/disk_free_space_variation.phpt |  32 +++++--
  .../file/disk_total_space_variation.phpt      |  16 +++-
@@ -443,15 +443,14 @@ index 084de7f1e6..8b48dfc9e3 100644
  	stream = php_stream_open_wrapper(arg, "rb", REPORT_ERRORS | ENFORCE_SAFE_MODE, NULL);
  	if (!stream) {
 diff --git a/ext/standard/tests/file/copy_variation4-win32.phpt b/ext/standard/tests/file/copy_variation4-win32.phpt
-index 3c5408aeb0c10b5e10aeb2f59d6effa3453082ad..3e5bd51dc6beb3535c58ec3c01f6bb3c0ef85dc3 100644
+index 3c5408aeb0c10b5e10aeb2f59d6effa3453082ad..dc3879d1a6a546cab6de7238718a72aa53faad6b 100644
 GIT binary patch
-delta 169
-zcmdm@I9X{!EBE9de3Fyra`PK&S}6o1mSia8mKK*N<mHzrB<JUqBxdF*_=Wl?BvqEA
-z7ApWbs>KTVc?vn1d8rDjDU<k&S<(`7iYE*3%1`Ftu@6Yf&(F~SiKJ?BafK%q<z?oj
-UTPc+00o7+~kYT~*G#)<|0L&sc$^ZZW
+delta 82
+zcmdm@_*`K_EBE9de3Fyra`PK&S}6o1mSia8mKK*N<mHzrB<JUqBxdF*_=Wl?BvqEA
+l7ApWbs>KTVc?vn1d8rDjDU<k&+0qhoic>W=r}6l)006sp8@T`g
 
-delta 24
-gcmbQNv_)}4EBEAhuI9;RJob|nxb-$);jw1{0B-FFAOHXW
+delta 22
+ecmaE^utjl0EBEAhu4YDt$$L0+Hf!+Mvj6~O4+o0?
 
 diff --git a/ext/standard/tests/file/copy_variation4.phpt b/ext/standard/tests/file/copy_variation4.phpt
 index 8c6ea1a8237178b00cca46295c49f041eb5b0fc9..cfb1d408873376a5604e5fb07606b2bbbd908287 100644
