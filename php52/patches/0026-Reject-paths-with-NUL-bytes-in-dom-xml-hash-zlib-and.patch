@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: lpgauthier <lpgauthier@circworld.qc.ca>
 Date: Thu, 22 Oct 2026 16:53:33 -0400
-Subject: [PATCH 26/27] Reject paths with NUL bytes in dom, xml, hash, zlib and
+Subject: [PATCH 26/28] Reject paths with NUL bytes in dom, xml, hash, zlib and
  SPL (CVE-2015-3411, CVE-2015-3412, CVE-2015-4598)
 
 Same check as for the standard file functions, for the path arguments
