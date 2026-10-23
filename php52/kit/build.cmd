@@ -112,6 +112,12 @@ rem passes (/D FD_SETSIZE=256, --enable-fd-setsize), which winsock2.h already si
 >> "%PB%\include\arpa\inet.h" echo #define FD_SETSIZE 256
 >> "%PB%\include\arpa\inet.h" echo #endif
 > "%PB%\include\netdb.h" echo #include ^<winsock2.h^>
+rem win32\glob.h (BSD code) includes sys/cdefs.h, only for __BEGIN_DECLS / __END_DECLS
+if not exist "%PB%\include\sys" mkdir "%PB%\include\sys"
+> "%PB%\include\sys\cdefs.h" echo #ifndef __BEGIN_DECLS
+>> "%PB%\include\sys\cdefs.h" echo #define __BEGIN_DECLS
+>> "%PB%\include\sys\cdefs.h" echo #define __END_DECLS
+>> "%PB%\include\sys\cdefs.h" echo #endif
 call :log "dependencies ready in %PB%"
 
 rem ---------------------------------------------------------------- PHP
