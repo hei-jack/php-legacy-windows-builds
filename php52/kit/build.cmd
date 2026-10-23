@@ -11,8 +11,9 @@ rem spaces, e.g. C:\php52kit).
 rem
 rem usage:  C:\php52kit\kit\build.cmd [ts^|nts^|all]          (default: all)
 rem   VC6DIR  defaults to C:\Program Files\Microsoft Visual Studio\VC98
-rem   PSDKDIR defaults to C:\Program Files\Microsoft SDK (February 2003), else
-rem           C:\Program Files\Microsoft Platform SDK (Server 2003 SP1)
+rem   PSDKDIR folder with SetEnv.Bat/SetEnv.Cmd; defaults to C:\Program Files\Microsoft SDK
+rem           (February 2003), else C:\Program Files\Microsoft Platform SDK (Server 2003 SP1).
+rem           If the SDK environment is already set in this window, that is used as is.
 rem   APACHE22=<dir with include\ and lib\ of Apache 2.2> also builds php5apache2_2.dll (TS)
 
 setlocal EnableExtensions EnableDelayedExpansion
@@ -24,17 +25,19 @@ echo. > "%LOG%"
 
 rem ---------------------------------------------------------------- toolchain
 if not defined VC6DIR set "VC6DIR=C:\Program Files\Microsoft Visual Studio\VC98"
-if not defined PSDKDIR if exist "C:\Program Files\Microsoft SDK\SetEnv.Cmd" set "PSDKDIR=C:\Program Files\Microsoft SDK"
-if not defined PSDKDIR if exist "C:\Program Files\Microsoft Platform SDK\SetEnv.Cmd" set "PSDKDIR=C:\Program Files\Microsoft Platform SDK"
-if not defined PSDKDIR set "PSDKDIR=C:\Program Files\Microsoft SDK"
+rem Platform SDK environment script: SetEnv.Bat (February 2003) or SetEnv.Cmd (Server 2003 SP1)
+set "PSDKENV="
+if defined PSDKDIR call :find_sdk "%PSDKDIR%"
+if not defined PSDKENV call :find_sdk "C:\Program Files\Microsoft SDK"
+if not defined PSDKENV call :find_sdk "C:\Program Files\Microsoft Platform SDK"
 cl >nul 2>&1
 if errorlevel 9009 if exist "%VC6DIR%\Bin\VCVARS32.BAT" call "%VC6DIR%\Bin\VCVARS32.BAT"
 cl >nul 2>&1
 if errorlevel 9009 (echo ERROR: cl.exe not found - run from a VC6 command prompt or set VC6DIR & exit /b 1)
-if exist "%PSDKDIR%\SetEnv.Cmd" (
-  call "%PSDKDIR%\SetEnv.Cmd" /XP32 /RETAIL
+if defined PSDKENV (
+  call "%PSDKENV%" /XP32 /RETAIL
 ) else (
-  echo WARNING: Platform SDK not found in "%PSDKDIR%" - set PSDKDIR. VC6's own headers are too old for PHP 5.2.
+  echo NOTE: no Platform SDK SetEnv script found ^(set PSDKDIR^); using the current INCLUDE and LIB
 )
 rem SDKs after February 2003 ship libraries built with /GS (buffer security checks); VC6 links them
 rem only with bufferoverflowu.lib. link.exe reads extra arguments from the LINK variable.
@@ -46,7 +49,12 @@ cl 2>&1 | find "Version 12.00" >nul
 if errorlevel 1 (echo ERROR: cl.exe is not Visual C++ 6.0 ^(12.00^) & exit /b 1)
 mc -? >nul 2>&1
 if errorlevel 9009 (echo ERROR: mc.exe ^(message compiler^) not found - it comes with the Platform SDK & exit /b 1)
-call :log "toolchain ok"
+rem Whether SetEnv ran here or before, the SDK headers must be in INCLUDE: VC6's own (1998) are
+rem too old for PHP 5.2. These two exist only in the Platform SDK.
+set "SDKHDR="
+for %%H in (wspiapi.h strsafe.h) do if not defined SDKHDR set "SDKHDR=%%~$INCLUDE:H"
+if not defined SDKHDR (echo ERROR: Platform SDK headers are not in INCLUDE - install the Core SDK with its Build Environment, or set PSDKDIR to the folder with SetEnv.Bat/SetEnv.Cmd & exit /b 1)
+call :log "toolchain ok (SDK header: !SDKHDR!)"
 
 rem configure.js insists on bison and flex although the tarball ships the generated files.
 rem These stubs fail loudly if the build ever tries to regenerate them.
@@ -128,6 +136,11 @@ copy /y "%SRC%\php.ini-dist" "%DIST%\" >nul & copy /y "%SRC%\php.ini-recommended
 if not exist "%DIST%\dev" mkdir "%DIST%\dev"
 for %%F in (php5ts.lib php5.lib) do if exist "%SRC%\%REL%\%%F" copy /y "%SRC%\%REL%\%%F" "%DIST%\dev\" >nul
 call :log "PHP %FL%: %DIST%"
+exit /b 0
+
+:find_sdk
+if exist "%~1\SetEnv.Bat" (set "PSDKDIR=%~1" & set "PSDKENV=%~1\SetEnv.Bat" & exit /b 0)
+if exist "%~1\SetEnv.Cmd" (set "PSDKDIR=%~1" & set "PSDKENV=%~1\SetEnv.Cmd")
 exit /b 0
 
 :log
