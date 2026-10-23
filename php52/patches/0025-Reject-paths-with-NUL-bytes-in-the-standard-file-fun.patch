@@ -28,7 +28,7 @@ CVE-2015-2348 / CVE-2015-4025-4026 patches, written for 5.2.17's
 argument parsing.
 
 The expectations of the ext/standard/tests/file tests that relied on the
-truncation (18 tests, and the 8 matching -win32 variants) are updated
+truncation (20 tests, and the 8 matching -win32 variants) are updated
 the way upstream did.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -59,6 +59,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  ext/standard/tests/file/glob_variation.phpt   |  37 ++++----
  .../tests/file/is_dir_variation4.phpt         |   4 +-
  .../tests/file/is_file_variation4.phpt        |   4 +-
+ .../tests/file/is_readable_variation1.phpt    |   6 +-
+ .../tests/file/is_writable_variation1.phpt    |  12 +--
  .../file/readfile_variation10-win32.phpt      |   2 +-
  .../tests/file/readfile_variation10.phpt      | Bin 1789 -> 1795 bytes
  .../tests/file/rename_variation13-win32.phpt  |   4 +-
@@ -69,7 +71,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  .../tests/file/tempnam_variation7-win32.phpt  |   8 +-
  .../tests/file/tempnam_variation7.phpt        |   8 +-
  main/php.h                                    |  11 +++
- 36 files changed, 259 insertions(+), 92 deletions(-)
+ 38 files changed, 268 insertions(+), 101 deletions(-)
 
 diff --git a/ext/standard/basic_functions.c b/ext/standard/basic_functions.c
 index 6f4116610d..ba8d3ca39e 100644
@@ -951,6 +953,50 @@ index 55aeedfaad..fbdf438945 100644
 +bool(false)
  
  *** Done ***
+diff --git a/ext/standard/tests/file/is_readable_variation1.phpt b/ext/standard/tests/file/is_readable_variation1.phpt
+index a1310327b8..74935743ce 100644
+--- a/ext/standard/tests/file/is_readable_variation1.phpt
++++ b/ext/standard/tests/file/is_readable_variation1.phpt
+@@ -87,11 +87,11 @@ bool(false)
+ -- Iteration 6 --
+ bool(false)
+ -- Iteration 7 --
+-bool(true)
++bool(false)
+ -- Iteration 8 --
+-bool(true)
++bool(false)
+ -- Iteration 9 --
+-bool(true)
++bool(false)
+ -- Iteration 10 --
+ bool(true)
+ -- Iteration 11 --
+diff --git a/ext/standard/tests/file/is_writable_variation1.phpt b/ext/standard/tests/file/is_writable_variation1.phpt
+index bf3e7e1171..1f3cbf599e 100644
+--- a/ext/standard/tests/file/is_writable_variation1.phpt
++++ b/ext/standard/tests/file/is_writable_variation1.phpt
+@@ -96,14 +96,14 @@ bool(false)
+ bool(false)
+ bool(false)
+ -- Iteration 7 --
+-bool(true)
+-bool(true)
++bool(false)
++bool(false)
+ -- Iteration 8 --
+-bool(true)
+-bool(true)
++bool(false)
++bool(false)
+ -- Iteration 9 --
+-bool(true)
+-bool(true)
++bool(false)
++bool(false)
+ -- Iteration 10 --
+ bool(true)
+ bool(true)
 diff --git a/ext/standard/tests/file/readfile_variation10-win32.phpt b/ext/standard/tests/file/readfile_variation10-win32.phpt
 index d4cad6c1e8..5111ed303c 100644
 --- a/ext/standard/tests/file/readfile_variation10-win32.phpt

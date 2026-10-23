@@ -18,7 +18,9 @@ function fails($log)
 			break;
 		}
 		if ($in && preg_match('/\[([^\]]+\.phpt)\]/', $line, $m)) {
-			$list[str_replace('\\', '/', $m[1])] = true;
+			/* each run has its own copy of the tree (testrun\<label>\...): compare relative paths */
+			$t = preg_replace('#^.*/testrun/[^/]+/#i', '', str_replace('\\', '/', $m[1]));
+			$list[$t] = true;
 		}
 	}
 	return $list;
