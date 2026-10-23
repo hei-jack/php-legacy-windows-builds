@@ -3,13 +3,16 @@ rem Builds the patched PHP 5.2.17 core (php5ts.dll/php5.dll, php.exe, php-cgi.ex
 rem php5isapi.dll) with Visual C++ 6.0, then lays it over the official 5.2.17 zips, so the official
 rem ext\*.dll and third-party DLLs are reused unchanged.
 rem
-rem Prerequisites on the VM: Visual C++ 6.0 SP6, Platform SDK February 2003 (last one for VC6;
-rem it also provides mc.exe). Run kit\fetch.ps1 on a modern machine first and copy its output
-rem folder here (path without spaces, e.g. C:\php52kit).
+rem Prerequisites on the VM: Visual C++ 6.0 SP6, Platform SDK February 2003 (5.2.3790.0, the last
+rem one for VC6; it also provides mc.exe). The Server 2003 SP1 SDK (5.2.3790.1830) may work: its
+rem libraries need bufferoverflowu.lib, which is then added automatically.
+rem Run kit\fetch.ps1 on a modern machine first and copy its output folder here (path without
+rem spaces, e.g. C:\php52kit).
 rem
 rem usage:  C:\php52kit\kit\build.cmd [ts^|nts^|all]          (default: all)
 rem   VC6DIR  defaults to C:\Program Files\Microsoft Visual Studio\VC98
-rem   PSDKDIR defaults to C:\Program Files\Microsoft SDK
+rem   PSDKDIR defaults to C:\Program Files\Microsoft SDK (February 2003), else
+rem           C:\Program Files\Microsoft Platform SDK (Server 2003 SP1)
 rem   APACHE22=<dir with include\ and lib\ of Apache 2.2> also builds php5apache2_2.dll (TS)
 
 setlocal EnableExtensions EnableDelayedExpansion
@@ -21,6 +24,8 @@ echo. > "%LOG%"
 
 rem ---------------------------------------------------------------- toolchain
 if not defined VC6DIR set "VC6DIR=C:\Program Files\Microsoft Visual Studio\VC98"
+if not defined PSDKDIR if exist "C:\Program Files\Microsoft SDK\SetEnv.Cmd" set "PSDKDIR=C:\Program Files\Microsoft SDK"
+if not defined PSDKDIR if exist "C:\Program Files\Microsoft Platform SDK\SetEnv.Cmd" set "PSDKDIR=C:\Program Files\Microsoft Platform SDK"
 if not defined PSDKDIR set "PSDKDIR=C:\Program Files\Microsoft SDK"
 cl >nul 2>&1
 if errorlevel 9009 if exist "%VC6DIR%\Bin\VCVARS32.BAT" call "%VC6DIR%\Bin\VCVARS32.BAT"
@@ -30,6 +35,12 @@ if exist "%PSDKDIR%\SetEnv.Cmd" (
   call "%PSDKDIR%\SetEnv.Cmd" /XP32 /RETAIL
 ) else (
   echo WARNING: Platform SDK not found in "%PSDKDIR%" - set PSDKDIR. VC6's own headers are too old for PHP 5.2.
+)
+rem SDKs after February 2003 ship libraries built with /GS (buffer security checks); VC6 links them
+rem only with bufferoverflowu.lib. link.exe reads extra arguments from the LINK variable.
+if exist "%PSDKDIR%\Lib\bufferoverflowu.lib" (
+  set "LINK=bufferoverflowu.lib %LINK%"
+  echo NOTE: this Platform SDK is newer than February 2003 ^(not supported with VC6 by Microsoft^); linking bufferoverflowu.lib
 )
 cl 2>&1 | find "Version 12.00" >nul
 if errorlevel 1 (echo ERROR: cl.exe is not Visual C++ 6.0 ^(12.00^) & exit /b 1)

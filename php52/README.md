@@ -100,8 +100,12 @@ binary interface; `check.cmd` verifies the exports.
    Downloads the 5.2.17 tarball, the official TS/NTS zips and the dependency sources (all pinned by
    SHA-256), applies `php52\patches`, and leaves a self-contained `C:\php52kit`.
 2. **Copy `C:\php52kit` to the VC6 VM** at the same path (no spaces). The VM needs Visual C++ 6.0
-   SP6 and the Platform SDK February 2003 (the last one that supports VC6; it also provides
-   `mc.exe`).
+   SP6 and the Platform SDK February 2003, version 5.2.3790.0 (the last one that supports VC6;
+   it also provides `mc.exe`). Windows XP SP3 or Server 2003, 32-bit, is the easiest host. The
+   Server 2003 **SP1** SDK (5.2.3790.1830, installs to `…\Microsoft Platform SDK`) is not
+   supported with VC6 by Microsoft but may work: `build.cmd` finds it and links
+   `bufferoverflowu.lib`, which its `/GS`-compiled libraries need. If its headers trip VC6, the
+   errors are at the top of `nmake-ts.log`.
 3. On the VM: `C:\php52kit\kit\build.cmd` (or `build.cmd ts` / `build.cmd nts`). Set `VC6DIR` /
    `PSDKDIR` if they are not in the default folders; set `APACHE22` to also build
    `php5apache2_2.dll`. It builds zlib, libiconv and libxml2 as static libraries, then PHP, and
