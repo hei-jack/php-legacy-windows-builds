@@ -8,6 +8,10 @@ rem usage: C:\php52kit\kit\check.cmd [full]
 setlocal EnableExtensions
 for %%I in ("%~dp0..") do set "KIT=%%~fI"
 set FULL=%~1
+rem dumpbin (VC6) is needed for the export check
+if not defined VC6DIR set "VC6DIR=C:\Program Files\Microsoft Visual Studio\VC98"
+dumpbin >nul 2>&1
+if errorlevel 9009 if exist "%VC6DIR%\Bin\VCVARS32.BAT" call "%VC6DIR%\Bin\VCVARS32.BAT" >nul
 set FAIL=0
 set CHECKED=0
 for %%F in (ts nts) do call :check %%F
