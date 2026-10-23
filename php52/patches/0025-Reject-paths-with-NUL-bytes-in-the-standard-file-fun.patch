@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: lpgauthier <lpgauthier@circworld.qc.ca>
 Date: Thu, 22 Oct 2026 16:51:22 -0400
-Subject: [PATCH 25/28] Reject paths with NUL bytes in the standard file
+Subject: [PATCH 25/29] Reject paths with NUL bytes in the standard file
  functions (CVE-2006-7243, CVE-2015-2348, CVE-2015-4025)
 
 A NUL byte in a path argument was passed to the C file APIs, which

@@ -1,0 +1,95 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: lpgauthier <lpgauthier@circworld.qc.ca>
+Date: Fri, 23 Oct 2026 14:13:29 -0400
+Subject: [PATCH 28/29] Don't export libxml2's FTP/HTTP client from php5ts.dll
+
+The Windows kit builds libxml2 without its FTP and HTTP clients
+(nanoftp/nanohttp): PHP never uses them, since ext/libxml routes
+libxml2's I/O through PHP streams, and they are network-parsing code
+with their own CVE history. The 49 functions are removed from
+ext/libxml/php_libxml2.def, which otherwise makes the php5ts.dll link
+fail. None of the official 5.2.17 extension DLLs imports any of them
+(checked against their import tables).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ext/libxml/php_libxml2.def | 49 --------------------------------------
+ 1 file changed, 49 deletions(-)
+
+diff --git a/ext/libxml/php_libxml2.def b/ext/libxml/php_libxml2.def
+index 9557b3e34e..1566e31cbc 100644
+--- a/ext/libxml/php_libxml2.def
++++ b/ext/libxml/php_libxml2.def
+@@ -453,15 +453,6 @@ xmlHashSize
+ xmlHashUpdateEntry
+ xmlHashUpdateEntry2
+ xmlHashUpdateEntry3
+-xmlIOFTPClose
+-xmlIOFTPMatch
+-xmlIOFTPOpen
+-xmlIOFTPRead
+-xmlIOHTTPClose
+-xmlIOHTTPMatch
+-xmlIOHTTPOpen
+-xmlIOHTTPOpenW
+-xmlIOHTTPRead
+ xmlIOParseDTD
+ xmlInitCharEncodingHandlers
+ xmlInitGlobals
+@@ -547,45 +538,6 @@ xmlMutexUnlock
+ xmlNamespaceParseNCName
+ xmlNamespaceParseNSDef
+ xmlNamespaceParseQName
+-xmlNanoFTPCheckResponse
+-xmlNanoFTPCleanup
+-xmlNanoFTPClose
+-xmlNanoFTPCloseConnection
+-xmlNanoFTPConnect
+-xmlNanoFTPConnectTo
+-xmlNanoFTPCwd
+-xmlNanoFTPDele
+-xmlNanoFTPFreeCtxt
+-xmlNanoFTPGet
+-xmlNanoFTPGetConnection
+-xmlNanoFTPGetResponse
+-xmlNanoFTPGetSocket
+-xmlNanoFTPInit
+-xmlNanoFTPList
+-xmlNanoFTPNewCtxt
+-xmlNanoFTPOpen
+-xmlNanoFTPProxy
+-xmlNanoFTPQuit
+-xmlNanoFTPRead
+-xmlNanoFTPScanProxy
+-xmlNanoFTPUpdateURL
+-xmlNanoHTTPAuthHeader
+-xmlNanoHTTPCleanup
+-xmlNanoHTTPClose
+-xmlNanoHTTPContentLength
+-xmlNanoHTTPEncoding
+-xmlNanoHTTPFetch
+-xmlNanoHTTPInit
+-xmlNanoHTTPMethod
+-xmlNanoHTTPMethodRedir
+-xmlNanoHTTPMimeType
+-xmlNanoHTTPOpen
+-xmlNanoHTTPOpenRedir
+-xmlNanoHTTPRead
+-xmlNanoHTTPRedir
+-xmlNanoHTTPReturnCode
+-xmlNanoHTTPSave
+-xmlNanoHTTPScanProxy
+ xmlNewAutomata
+ xmlNewCDataBlock
+ xmlNewCatalog
+@@ -797,7 +749,6 @@ xmlRegexpPrint
+ xmlRegisterCharEncodingHandler
+ xmlRegisterDefaultInputCallbacks
+ xmlRegisterDefaultOutputCallbacks
+-xmlRegisterHTTPPostCallbacks
+ xmlRegisterInputCallbacks
+ xmlRegisterNodeDefault
+ xmlRegisterOutputCallbacks
+-- 
+2.55.0.windows.5
+

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: lpgauthier <lpgauthier@circworld.qc.ca>
 Date: Thu, 22 Oct 2026 16:48:26 -0400
-Subject: [PATCH 24/28] Reject include/require paths containing NUL bytes
+Subject: [PATCH 24/29] Reject include/require paths containing NUL bytes
  (CVE-2006-7243)
 
 include "$dir/$name.php" with a NUL byte in $name silently opened a truncated path - the classic way around extension checks. Such paths now fail exactly like a missing file (warning for include, fatal error for require), as in PHP 5.3.4. zend_vm_execute.h regenerated with zend_vm_gen.php (it reproduces the tarball's file byte for byte before the change).

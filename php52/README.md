@@ -41,7 +41,8 @@ standard, session, SPL, pcre, date, xml/dom/libxml, ftp, calendar, ...).
 | 23 | CVE-2015-6835 | use-after-free in the session deserializers (reproduced on stock 5.2.17) | Debian squeeze-lts (prepared, never applied by Debian) |
 | 24–26 | CVE-2006-7243, CVE-2015-2348, CVE-2015-3411/3412, CVE-2015-4025, CVE-2015-4598 | paths containing a NUL byte are rejected instead of silently truncated: include/require and about 60 functions and methods (file, dir, stat, link, hash, dom, xmlreader/writer, simplexml, zlib, SPL) | CentOS 5 php53, Debian squeeze-lts, written for 5.2's argument parsing |
 | 27 | — | builds with libxml2 2.9 (opaque output buffers in DOM and SimpleXML) | php-src PHP-5.3 |
-| 28 | — | version string `5.2.17-cve2026` | |
+| 28 | — | php5ts.dll does not export libxml2's FTP/HTTP client, which the kit leaves out (no official extension imports it) | |
+| 29 | — | version string `5.2.17-cve2026` | |
 
 CVE-2015-6834's other part (bug #70172, nested `unserialize()`) does not apply: it needs the
 shared unserialize state of PHP 5.6, and 5.2 gives every nested call its own (checked with the
