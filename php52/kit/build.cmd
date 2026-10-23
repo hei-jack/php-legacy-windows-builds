@@ -105,7 +105,12 @@ rem packages. On Windows PHP uses no BIND code (the official php5ts.dll contains
 rem PHP's own, in flock_compat.c) and zend_config.w32.h includes winsock2.h first, so stubs do.
 if not exist "%PB%\include\arpa" mkdir "%PB%\include\arpa"
 > "%PB%\include\arpa\nameser.h" echo /* stub: PHP 5.2's configure checks for this file; the Windows build uses no BIND code */
+rem php_network.h #undefs FD_SETSIZE just before including arpa/inet.h: restore the value configure
+rem passes (/D FD_SETSIZE=256, --enable-fd-setsize), which winsock2.h already sized fd_set with.
 > "%PB%\include\arpa\inet.h" echo #include ^<winsock2.h^>
+>> "%PB%\include\arpa\inet.h" echo #ifndef FD_SETSIZE
+>> "%PB%\include\arpa\inet.h" echo #define FD_SETSIZE 256
+>> "%PB%\include\arpa\inet.h" echo #endif
 > "%PB%\include\netdb.h" echo #include ^<winsock2.h^>
 call :log "dependencies ready in %PB%"
 
