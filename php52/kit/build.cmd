@@ -99,11 +99,13 @@ copy /y bin.msvc\libxml2_a_dll.lib "%PB%\lib\" >nul
 copy /y ..\include\libxml\*.h "%PB%\include\libxml\" >nul
 popd
 :deps_done
-rem PHP 5.2's configure requires arpa\nameser.h, and basic_functions.c / dns.c include netdb.h:
-rem both came from php.net's old win32build/bindlib packages. On Windows PHP uses no BIND code (the
-rem official php5ts.dll contains none) and zend_config.w32.h includes winsock2.h first, so stubs do.
+rem PHP 5.2's configure requires arpa\nameser.h, php_network.h includes arpa/inet.h on Windows, and
+rem basic_functions.c / dns.c include netdb.h: they came from php.net's old win32build/bindlib
+rem packages. On Windows PHP uses no BIND code (the official php5ts.dll contains none; inet_aton is
+rem PHP's own, in flock_compat.c) and zend_config.w32.h includes winsock2.h first, so stubs do.
 if not exist "%PB%\include\arpa" mkdir "%PB%\include\arpa"
 > "%PB%\include\arpa\nameser.h" echo /* stub: PHP 5.2's configure checks for this file; the Windows build uses no BIND code */
+> "%PB%\include\arpa\inet.h" echo #include ^<winsock2.h^>
 > "%PB%\include\netdb.h" echo #include ^<winsock2.h^>
 call :log "dependencies ready in %PB%"
 
