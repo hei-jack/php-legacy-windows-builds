@@ -1,6 +1,7 @@
 --TEST--
 CVE-2011-4885: max_input_vars limits multipart form fields
 --INI--
+display_startup_errors=1
 max_input_vars=2
 max_multipart_body_parts=100
 display_errors=1

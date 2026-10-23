@@ -1,6 +1,7 @@
 --TEST--
 max_multipart_body_parts limits the number of multipart parts (CVE-2023-0662)
 --INI--
+display_startup_errors=1
 max_multipart_body_parts=3
 display_errors=1
 html_errors=0
