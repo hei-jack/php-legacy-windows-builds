@@ -61,6 +61,10 @@ if exist "%RT%" rmdir /s /q "%RT%"
 xcopy /e /i /q /k "%SRC%" "%RT%" >nul
 xcopy /i /q /y "%KIT%\tests\*.phpt" "%RT%\cve-tests\" >nul
 pushd "%RT%"
+rem PHP 5.2 on Windows shows a MessageBox for startup warnings when display_startup_errors is on,
+rem which run-tests.php sets; tests that pass bad ini values would stop on a dialog. Turn it off
+rem in this private copy (same for the official and the rebuilt runs, so the comparison holds).
+"%~2\php.exe" -n -r "$f='run-tests.php'; file_put_contents($f, str_replace(\"'display_startup_errors=1'\", \"'display_startup_errors=0'\", file_get_contents($f)));"
 set "DIRS=%~3"
 if /i "%DIRS%"=="%KIT%\tests" set DIRS=cve-tests
 "%~2\php.exe" -n run-tests.php %DIRS% > "%OUTDIR%\%1.log" 2>&1
