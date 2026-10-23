@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: lpgauthier <lpgauthier@circworld.qc.ca>
 Date: Fri, 23 Oct 2026 14:13:29 -0400
-Subject: [PATCH 28/29] Don't export libxml2's FTP/HTTP client from php5ts.dll
+Subject: [PATCH 28/30] Don't export libxml2's FTP/HTTP client from php5ts.dll
 
 The Windows kit builds libxml2 without its FTP and HTTP clients
 (nanoftp/nanohttp): PHP never uses them, since ext/libxml routes

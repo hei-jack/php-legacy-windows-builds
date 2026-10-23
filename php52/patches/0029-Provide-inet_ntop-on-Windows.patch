@@ -1,0 +1,118 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: lpgauthier <lpgauthier@circworld.qc.ca>
+Date: Fri, 23 Oct 2026 14:18:30 -0400
+Subject: [PATCH 29/30] Provide inet_ntop() on Windows
+
+With IPv6 enabled (the official 5.2.17 build has "IPv6 Support =>
+enabled"), ext/ftp calls inet_ntop() for EPRT. Windows XP / 2003
+Winsock has no inet_ntop (it appeared in Vista); the official build got
+one from php.net's bindlib resolv.lib, which is no longer available.
+Add win32/inet.c with the implementation PHP 5.3 ships (based on
+WSAAddressToString, Windows 2000 and later), declare it from
+main/php_network.h and build it on Windows.
+
+Checked by compiling win32/inet.c for 32-bit Windows as C89 with
+MinGW: no warnings; it imports WSAAddressToStringA from ws2_32.
+
+Source: php-src PHP-5.3 win32/inet.c (inet_ntop only; inet_aton is in
+ext/standard/flock_compat.c in 5.2, and nothing calls inet_pton on
+Windows since HAVE_INET_PTON is not defined there).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ main/php_network.h     |  1 +
+ win32/build/config.w32 |  2 +-
+ win32/inet.c           | 40 ++++++++++++++++++++++++++++++++++++++++
+ win32/inet.h           |  8 ++++++++
+ 4 files changed, 50 insertions(+), 1 deletion(-)
+ create mode 100644 win32/inet.c
+ create mode 100644 win32/inet.h
+
+diff --git a/main/php_network.h b/main/php_network.h
+index ab2aae5696..3433fe0bdc 100644
+--- a/main/php_network.h
++++ b/main/php_network.h
+@@ -36,6 +36,7 @@
+    /* getaddrinfo */
+ #  include <wspiapi.h>
+ # endif
++# include "win32/inet.h"
+ #else
+ # undef closesocket
+ # define closesocket close
+diff --git a/win32/build/config.w32 b/win32/build/config.w32
+index 6bc87bc130..33fb10c86c 100644
+--- a/win32/build/config.w32
++++ b/win32/build/config.w32
+@@ -320,7 +320,7 @@ ADD_SOURCES("main/streams", "streams.c cast.c memory.c filter.c plain_wrapper.c
+ 	userspace.c transports.c xp_socket.c mmap.c");
+ 
+ ADD_SOURCES("win32", "crypt_win32.c glob.c md5crypt.c readdir.c \
+-	registry.c select.c sendmail.c time.c wfile.c winutil.c wsyslog.c globals.c");
++	registry.c select.c sendmail.c time.c wfile.c winutil.c wsyslog.c globals.c inet.c");
+ 
+ ADD_SOURCES("regex", "regcomp.c regerror.c regexec.c regfree.c");
+ 
+diff --git a/win32/inet.c b/win32/inet.c
+new file mode 100644
+index 0000000000..abc2c65703
+--- /dev/null
++++ b/win32/inet.c
+@@ -0,0 +1,40 @@
++/* inet_ntop() for Windows XP / Server 2003, whose Winsock lacks it.
++ * From PHP 5.3's win32/inet.c; uses WSAAddressToString (Windows 2000 and later). */
++#include "php.h"
++#include <winsock2.h>
++#include <ws2tcpip.h>
++
++#include "inet.h"
++
++PHPAPI const char* inet_ntop(int af, const void* src, char* dst, size_t size)
++{
++	int address_length;
++	DWORD string_length = size;
++	struct sockaddr_storage sa;
++	struct sockaddr_in *sin = (struct sockaddr_in *)&sa;
++	struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&sa;
++
++	memset (&sa, 0, sizeof (sa));
++	switch (af) {
++		case AF_INET:
++			address_length = sizeof (struct sockaddr_in);
++			sin->sin_family = af;
++			memcpy (&sin->sin_addr, src, sizeof (struct in_addr));
++			break;
++
++		case AF_INET6:
++			address_length = sizeof (struct sockaddr_in6);
++			sin6->sin6_family = af;
++			memcpy (&sin6->sin6_addr, src, sizeof (struct in6_addr));
++			break;
++
++		default:
++			return NULL;
++	}
++
++	if (WSAAddressToString ((LPSOCKADDR) &sa, address_length, NULL, dst, &string_length) == 0) {
++		return dst;
++	}
++
++	return NULL;
++}
+diff --git a/win32/inet.h b/win32/inet.h
+new file mode 100644
+index 0000000000..164c4fa56a
+--- /dev/null
++++ b/win32/inet.h
+@@ -0,0 +1,8 @@
++/* inet_ntop() for Windows: Winsock only has it from Vista on. PHP 5.2 used to get it from
++ * bindlib's resolv.lib; this is the implementation PHP 5.3 ships (win32/inet.c). */
++#ifndef PHP_WIN32_INET_H
++#define PHP_WIN32_INET_H
++
++PHPAPI const char* inet_ntop(int af, const void* src, char* dst, size_t size);
++
++#endif
+-- 
+2.55.0.windows.5
+

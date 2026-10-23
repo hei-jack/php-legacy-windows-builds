@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: lpgauthier <lpgauthier@circworld.qc.ca>
 Date: Fri, 23 Oct 2026 13:42:50 -0400
-Subject: [PATCH 27/29] Build with libxml2 2.9 (opaque output buffers)
+Subject: [PATCH 27/30] Build with libxml2 2.9 (opaque output buffers)
 
 Since libxml2 2.9, xmlOutputBuffer->buffer is an opaque xmlBuf, so
 DOMDocumentType::internalSubset, DOMNode::C14N() and
