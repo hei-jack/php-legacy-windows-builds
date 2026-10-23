@@ -114,7 +114,11 @@ call :log "PHP %FL%: copying source"
 if exist "%KIT%\build-%FL%" rmdir /s /q "%KIT%\build-%FL%"
 xcopy /e /i /q /k "%KIT%\src\php-5.2.17" "%SRC%" >nul || exit /b 1
 pushd "%SRC%"
-call buildconf.bat >>"%LOG%" 2>&1 || (popd & exit /b 1)
+rem buildconf.bat's exit code is not usable: on XP its last line (SET of an undefined variable to
+rem nothing) leaves errorlevel 1 even when it worked. Check its result instead.
+if exist configure.js del configure.js
+call buildconf.bat >>"%LOG%" 2>&1
+if not exist configure.js (popd & echo buildconf did not create configure.js & exit /b 1)
 set "CFG=--with-php-build=%PB% --enable-cli-win32"
 if /i "%FL%"=="ts" (set "CFG=!CFG! --enable-isapi") else (set "CFG=!CFG! --disable-zts")
 if /i "%FL%"=="ts" if defined APACHE22 set "CFG=!CFG! --enable-apache2-2handler --with-apache-includes=%APACHE22%\include --with-apache-libs=%APACHE22%\lib"
