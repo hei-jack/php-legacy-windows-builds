@@ -88,6 +88,16 @@ $ExpectedChanges = @(
     'tests/lang/bug45392.phpt'
 )
 
+# Tests that pass or fail by chance on the official builds too (checked by rerunning both), so a
+# failure on one side only says nothing about the patches. Wildcards allowed; case-insensitive.
+$KnownFlaky = @(
+    'sapi/phpdbg/tests/watch_*.phpt'   # phpdbg watchpoints (page protection): 2/5 official, 3/5 patched on 7.0
+)
+function Test-KnownFlaky([string] $Test) {
+    foreach ($pattern in $KnownFlaky) { if ($Test -like $pattern) { return $true } }
+    return $false
+}
+
 function Split-List([string[]] $Values) {
     @($Values | ForEach-Object { $_ -split '[,\s]+' } | Where-Object { $_ })
 }
@@ -291,8 +301,11 @@ foreach ($ver in $Version) {
             $onlyPatched  = @($failed.patched | Where-Object { $_ -notin $failed.official } | Sort-Object)
             $onlyOfficial = @($failed.official | Where-Object { $_ -notin $failed.patched } | Sort-Object)
             $expected     = @($onlyPatched | Where-Object { $_ -in $ExpectedChanges })
-            $unexpected   = @($onlyPatched | Where-Object { $_ -notin $ExpectedChanges })
+            $flaky        = @($onlyPatched + $onlyOfficial | Where-Object { $_ -notin $ExpectedChanges -and (Test-KnownFlaky $_) } | Sort-Object)
+            $unexpected   = @($onlyPatched | Where-Object { $_ -notin $ExpectedChanges -and -not (Test-KnownFlaky $_) })
+            $onlyOfficial = @($onlyOfficial | Where-Object { -not (Test-KnownFlaky $_) })
             $suite = "{0} of {1} expected changes, {2} unexpected, {3} failing only on official" -f $expected.Count, $ExpectedChanges.Count, $unexpected.Count, $onlyOfficial.Count
+            if ($flaky.Count) { $suite += " ($($flaky.Count) known-flaky ignored)" }
 
             Out-Report ''
             Out-Report "Test pack ($($targets -join ', ')):"
@@ -310,6 +323,11 @@ foreach ($ver in $Version) {
             Out-Report ''
             Out-Report "Failing only on the official build ($($onlyOfficial.Count)):"
             $onlyOfficial | ForEach-Object { Out-Report "  $_" }
+            if ($flaky.Count) {
+                Out-Report ''
+                Out-Report "Known-flaky, failing on one side only this run (not counted):"
+                $flaky | ForEach-Object { Out-Report "  $_" }
+            }
         }
 
         [IO.File]::WriteAllLines($report, $lines)
