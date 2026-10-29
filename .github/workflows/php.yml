@@ -26,6 +26,22 @@ jobs:
           $args = "/c", "vs_installer.exe", "modify", "--installPath", "`"$installPath`"", `
                   "--add", $component, "--quiet", "--norestart", "--nocache"
           Start-Process -FilePath "cmd.exe" -ArgumentList $args -Wait -NoNewWindow
+
+      - name: Point PHP SDK to installed VC15
+        shell: pwsh
+        run: |
+          $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.v141.x86.x64 -property installationPath
+          Write-Host "Found VC15 at: $vsPath"
+
+          # 关键：修改 SDK 的设置脚本，告诉它去哪里找 VC15
+          $sdkShellScript = ".\php-sdk-binary-tools\bin\phpsdk_setshell.bat" # 根据仓库实际路径调整
+          if (Test-Path $sdkShellScript) {
+            (Get-Content $sdkShellScript) -replace 'set VC15_DIR=.*', "set VC15_DIR=$vsPath\VC" | Set-Content $sdkShellScript
+            Write-Host "Patched $sdkShellScript to use VC15_DIR=$vsPath\VC"
+          } else {
+            Write-Error "phpsdk_setshell.bat not found at $sdkShellScript"
+          }
   
       - name: Build PHP 7.3.33 with patches
         shell: powershell
