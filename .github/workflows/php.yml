@@ -1,0 +1,41 @@
+name: Build PHP 7.3.33 with CVE Patches
+
+on:
+  workflow_dispatch: # 允许在 Actions 页面手动触发
+  push:
+    tags:
+      - 'build-7.3.33-*' # 可选：推送特定 tag 时自动触发
+
+jobs:
+  build:
+    # 使用 windows-2019 运行器。它虽然预装 VS2019，但通常也包含 VS2017 的生成工具。
+    # 如果遇到编译器问题，可尝试降级为 `windows-2017`（如果平台仍支持）。
+    runs-on: windows-2017
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Visual Studio 2017 Build Tools
+        # 确保 VC15 工具链可用。windows-2019 自带 VS2019，这里显式添加 VS2017 生成工具。
+        uses: microsoft/setup-msbuild@v2
+        with:
+          vs-version: '[15.0, 16.0)' # 定位 VS2017 (v15.x)
+
+      - name: Build PHP 7.3.33 with patches
+        shell: powershell
+        # 直接调用仓库的 build.ps1，指定版本为 7.3。
+        # 脚本会自动完成源码克隆、补丁应用、依赖获取和编译全过程。
+        run: .\build.ps1 -Version 7.3
+        # 根据 README，产物位于 C:\php-sdk\dist
+        # 整个编译过程可能需要较长时间（20-40 分钟），请耐心等待。
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-7.3.33-cve2026-windows
+          path: C:\php-sdk\dist\*.zip
+          # 保留 7 天，可按需调整
+          retention-days: 7
+          # 如果目录为空，任务会失败，便于及时发现问题
+          if-no-files-found: error
