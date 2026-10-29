@@ -8,80 +8,40 @@ on:
 
 jobs:
   build:
+    # 官方已移除 windows-2019，必须使用 windows-2022 并手动安装 VC15
     runs-on: windows-2022
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Locate Visual Studio 2022 installation
-        id: vs-locate
+      - name: Install VC15 toolset and Build PHP 7.3.33
         shell: pwsh
         run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installPath = & $vswhere -latest -products * -version "[17.0,18.0)" -property installationPath
-          if (-not $installPath) { Write-Error "VS 2022 not found."; exit 1 }
-          echo "VS_INSTALL_PATH=$installPath" >> $env:GITHUB_OUTPUT
-
-      - name: Install VC15 (v141) toolset with required components
-        shell: pwsh
-        run: |
-          $installPath = "${{ steps.vs-locate.outputs.VS_INSTALL_PATH }}"
+          # ---- 第一步：安装 VC15 (v141) 工具集 ----
+          Write-Host "Installing VC15 (v141) toolset on windows-2022..."
           $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
           
-          # 关键：不仅安装 v141 工具集，还安装桌面 C++ 工作负载和 Windows SDK，确保 vcvarsall.bat 存在
-          $components = @(
-            "Microsoft.VisualStudio.Component.VC.v141.x86.x64",
-            "Microsoft.VisualStudio.Workload.NativeDesktop",
-            "Microsoft.VisualStudio.Component.Windows10SDK.17763"
+          # 动态定位 VS 2022 安装路径，避免硬编码 "Enterprise" 导致失败
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -latest -products * -version "[17.0,18.0)" -property installationPath
+          if (-not $installPath) { throw "Visual Studio 2022 installation not found." }
+          
+          $component = "Microsoft.VisualStudio.Component.VC.v141.x86.x64"
+          $vsArgs = @(
+            "modify", "--installPath", "`"$installPath`"",
+            "--add", $component, "--quiet", "--norestart", "--nocache"
           )
           
-          $args = @("modify", "--installPath", "`"$installPath`"", "--quiet", "--norestart", "--nocache")
-          foreach ($comp in $components) { $args += "--add"; $args += $comp }
-          
-          Start-Process -FilePath $installer -ArgumentList $args -Wait -NoNewWindow
-
-      - name: Verify VC15 toolset installation
-        id: verify-vc15
-        shell: pwsh
-        run: |
-          # 使用 phpsdk 自带的 vswhere 进行验证，与 SDK 的检测逻辑保持一致
-          $sdkVswhere = "C:\php-sdk\bin\vswhere.exe"
-          if (-not (Test-Path $sdkVswhere)) {
-            # 如果 SDK 还没就绪，回退到系统 vswhere
-            $sdkVswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $process = Start-Process -FilePath $installer -ArgumentList $vsArgs -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
+            throw "VC15 installation failed with exit code $($process.ExitCode)."
           }
+          Write-Host "VC15 toolset installation completed."
           
-          $vc15Path = & $sdkVswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.v141.x86.x64 -property installationPath
-          if (-not $vc15Path) {
-            Write-Error "VC15 (v141) toolset was NOT found by vswhere. Aborting."
-            exit 1
-          }
-          Write-Host "VC15 toolset confirmed at: $vc15Path"
-          echo "VC15_PATH=$vc15Path" >> $env:GITHUB_OUTPUT
-
-      - name: Patch phpsdk_setshell.bat to bypass auto-detection
-        shell: pwsh
-        run: |
-          $vc15FullPath = "${{ steps.verify-vc15.outputs.VC15_PATH }}"
-          $sdkBat = "C:\php-sdk\bin\phpsdk_setshell.bat"
-          
-          if (-not (Test-Path $sdkBat)) {
-            Write-Error "phpsdk_setshell.bat not found at expected location: $sdkBat"
-            exit 1
-          }
-          
-          # 将脚本中尝试自动检测 VC15 目录的逻辑，替换为直接指向我们验证过的路径
-          # 原始的检测逻辑通常包含 "set VC15_DIR=" 或类似的语句
-          (Get-Content $sdkBat) -replace 'set VC15_DIR=.*', "set VC15_DIR=$vc15FullPath\VC" | Set-Content $sdkBat
-          
-          Write-Host "Successfully patched phpsdk_setshell.bat to use VC15_DIR=$vc15FullPath\VC"
-          # 打印修改后的相关行，供日志确认
-          Get-Content $sdkBat | Select-String "VC15_DIR"
-
-      - name: Build PHP 7.3.33 with patches
-        shell: powershell
-        run: powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 7.3
+          # ---- 第二步：在同一 shell 中直接执行构建，避免环境变量丢失 ----
+          Write-Host "Starting PHP 7.3.33 build with CVE patches..."
+          powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 7.3
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
