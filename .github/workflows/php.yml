@@ -1,4 +1,4 @@
-name: Build PHP 7.3.33 with CVE Patches
+name: Build PHP 7.3.33 with CVE Patches (Chocolatey VC15)
 
 on:
   workflow_dispatch:
@@ -18,47 +18,46 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [nts, ts]
+        variant: [TS, NTS]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install VS2017 Build Tools (VC15) for PHP 7.3
+      - name: Install Chocolatey
         shell: pwsh
         run: |
-          Write-Host "Installing VS2017 Build Tools (VC15) on windows-2022..."
-          
-          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-          if (-not (Test-Path $installer)) {
-            throw "vs_installer.exe not found. Cannot install VC15."
+          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
           }
 
-          # 使用 vs_installer 安装 VC15 核心组件和工作负载
-          $vsArgs = @(
-            "modify",
-            "--installPath", "`"${env:ProgramFiles(x86)}\Microsoft Visual Studio\2017\BuildTools`"",
-            "--add", "Microsoft.VisualStudio.Workload.VCTools",
-            "--add", "Microsoft.VisualStudio.Component.VC.v141.x86.x64",
-            "--quiet", "--norestart", "--nocache"
-          )
-          
-          $process = Start-Process -FilePath $installer -ArgumentList $vsArgs -Wait -PassThru -NoNewWindow
-          if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
-            throw "VC15 installation failed with exit code $($process.ExitCode)."
+      - name: Install VS2017 Community + Native Desktop workload via Chocolatey
+        shell: pwsh
+        run: |
+          # 按 php-legacy-windows-builds 项目要求，安装带 "Desktop development with C++" 的 VS2017
+          choco install -y visualstudio2017community --version=15.9.7.0 --no-progress
+          choco install -y visualstudio2017-workload-nativedesktop --no-progress
+          # 部分场景需要显式补装 VC++ 构建工具包
+          choco install -y visualcpp-build-tools --no-progress
+
+      - name: Verify VC15 is detectable
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vc15 = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.v141.x86.x64 -property installationPath
+          if (-not $vc15) {
+            Write-Error "VC15 (v141) still not detectable after Chocolatey install. Aborting."
+            exit 1
           }
-          Write-Host "VC15 toolset installation completed."
+          Write-Host "VC15 confirmed at: $vc15"
 
       - name: Build PHP 7.3.33 (${{ matrix.variant }})
         shell: pwsh
         run: |
-          # 根据矩阵变量构建 NTS 或 TS 版本
-          # 参考 PHP74 项目：-Nts 用于 NTS，省略则默认为 TS
-          if ('${{ matrix.variant }}' -eq 'nts') {
-            powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 7.3 -Nts
-          } else {
-            powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 7.3
-          }
+          # 使用 -Flavors 参数分别构建 TS 和 NTS（见项目 README）
+          powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 7.3 -Flavors ${{ matrix.variant }}
 
       - name: Upload build artifacts (${{ matrix.variant }})
         uses: actions/upload-artifact@v4
