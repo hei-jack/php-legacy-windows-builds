@@ -1,4 +1,4 @@
-name: Build PHP 7.3.33 with CVE Patches (Chocolatey VC15)
+name: Build PHP 7.3.33 with CVE Patches
 
 on:
   workflow_dispatch:
@@ -24,39 +24,57 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Chocolatey
-        shell: pwsh
-        run: |
-          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          }
-
-      - name: Install VS2017 Community + Native Desktop workload via Chocolatey
-        shell: pwsh
-        run: |
-          # 按 php-legacy-windows-builds 项目要求，安装带 "Desktop development with C++" 的 VS2017
-          choco install -y visualstudio2017community --version=15.9.7.0 --no-progress
-          choco install -y visualstudio2017-workload-nativedesktop --no-progress
-          # 部分场景需要显式补装 VC++ 构建工具包
-          choco install -y visualcpp-build-tools --no-progress
-
-      - name: Verify VC15 is detectable
+      - name: Locate Visual Studio 2022 installation
+        id: vs-locate
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vc15 = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.v141.x86.x64 -property installationPath
-          if (-not $vc15) {
-            Write-Error "VC15 (v141) still not detectable after Chocolatey install. Aborting."
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found."
+          }
+          # 动态获取 VS 2022 实际安装路径，避免硬编码 Enterprise 导致失败
+          $installPath = & $vswhere -latest -products * -version "[17.0,18.0)" -property installationPath
+          if (-not $installPath) {
+            throw "Visual Studio 2022 installation not found."
+          }
+          Write-Host "Found VS 2022 at: $installPath"
+          echo "VS_INSTALL_PATH=$installPath" >> $env:GITHUB_OUTPUT
+
+      - name: Install VC15 (v141) via vs_installer with exact Component ID
+        shell: pwsh
+        run: |
+          $installPath = "${{ steps.vs-locate.outputs.VS_INSTALL_PATH }}"
+          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          $component = "Microsoft.VisualStudio.Component.VC.v141.x86.x64"
+
+          $args = @(
+            "modify",
+            "--installPath", "`"$installPath`"",
+            "--add", $component,
+            "--quiet", "--norestart", "--nocache"
+          )
+          $process = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
+            throw "VC15 installation failed with exit code $($process.ExitCode)."
+          }
+          Write-Host "VC15 installation completed."
+
+      - name: Verify VC15 is detectable by vswhere
+        id: verify-vc15
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vc15Path = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.v141.x86.x64 -property installationPath
+          if (-not $vc15Path) {
+            Write-Error "VC15 (v141) still not detectable after vs_installer install. Aborting."
             exit 1
           }
-          Write-Host "VC15 confirmed at: $vc15"
+          Write-Host "VC15 confirmed at: $vc15Path"
+          echo "VC15_PATH=$vc15Path" >> $env:GITHUB_OUTPUT
 
       - name: Build PHP 7.3.33 (${{ matrix.variant }})
         shell: pwsh
         run: |
-          # 使用 -Flavors 参数分别构建 TS 和 NTS（见项目 README）
           powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 7.3 -Flavors ${{ matrix.variant }}
 
       - name: Upload build artifacts (${{ matrix.variant }})
