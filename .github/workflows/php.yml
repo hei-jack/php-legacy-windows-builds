@@ -1,65 +1,46 @@
 name: Build PHP 7.3.33 with CVE Patches
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # 允许在 Actions 页面手动触发
   push:
     tags:
-      - 'build-7.3.33-*'
+      - 'build-7.3.33-*' # 可选：推送特定 tag 时自动触发
 
 jobs:
   build:
-    # 坚持使用 windows-2019：php/setup-php-sdk 官方文档明确指出
-    # PHP 7.3 在 windows-2022 上缺少正确的工具集，应在 windows-2019 上构建。
-    runs-on: windows-2019
+    # 使用 windows-2022 运行器。它虽然预装 VS2019，但通常也包含 VS2017 的生成工具。
+    # 如果遇到编译器问题，可尝试降级为 `windows-2017`（如果平台仍支持）。
+    runs-on: windows-2022
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup VC15 (Visual Studio 2017) toolset
-        # meuhland 的 build.ps1 需要 VC15 编译器。
-        # windows-2019 镜像本身包含 VS2019，但不保证 VC15 已启用，
-        # 这里显式调用 VS 安装器，补装 VC15 组件。
+      - name: Install VC15 (VS2017) toolset
         shell: pwsh
         run: |
-          $installer = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe"
-          $installPath = "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise"
+          # 使用 VS Installer 命令行安装 VC15 (v141) 组件，以便在 windows-2022 上构建 PHP 7.3
+          Set-Location "C:\Program Files (x86)\Microsoft Visual Studio\Installer\"
+          $installPath = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
           $component = "Microsoft.VisualStudio.Component.VC.v141.x86.x64"
-          Write-Host "正在为 $installPath 安装 VC15 组件..."
-          & $installer modify --installPath $installPath --add $component --quiet --norestart
-          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) {
-            Write-Error "VC15 组件安装失败，退出码: $LASTEXITCODE"
-            exit 1
-          }
-          Write-Host "VC15 组件安装完成（退出码 3010 表示需要重启，但通常不影响本次构建）"
-
+          $args = "/c", "vs_installer.exe", "modify", "--installPath", "`"$installPath`"", `
+                  "--add", $component, "--quiet", "--norestart", "--nocache"
+          Start-Process -FilePath "cmd.exe" -ArgumentList $args -Wait -NoNewWindow
+  
       - name: Build PHP 7.3.33 with patches
         shell: powershell
-        # meuhland 仓库的 build.ps1 内部会：
-        # 1. 克隆 php-7.3.33 源码
-        # 2. 应用 patches\ 目录下为 7.3 准备的 3 个补丁，以及两个前置补丁
-        #    (max_multipart_body_parts / ZSTR_MAX_LEN)
-        # 3. 获取官方依赖并编译
-        # 产物默认输出到 C:\php-sdk\dist
-        run: |
-          $ErrorActionPreference = "Stop"
-          Write-Host "开始执行 build.ps1 -Version 7.3"
-          .\build.ps1 -Version 7.3
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "build.ps1 执行失败，退出码: $LASTEXITCODE"
-            exit 1
-          }
-          Write-Host "构建完成，检查产物目录..."
-          if (Test-Path "C:\php-sdk\dist") {
-            Get-ChildItem "C:\php-sdk\dist"
-          } else {
-            Write-Warning "C:\php-sdk\dist 不存在，build.ps1 可能未按预期输出产物。"
-          }
+        # 直接调用仓库的 build.ps1，指定版本为 7.3。
+        # 脚本会自动完成源码克隆、补丁应用、依赖获取和编译全过程。
+        run: .\build.ps1 -Version 7.3
+        # 根据 README，产物位于 C:\php-sdk\dist
+        # 整个编译过程可能需要较长时间（20-40 分钟），请耐心等待。
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: php-7.3.33-cve2026-windows
           path: C:\php-sdk\dist\*.zip
+          # 保留 7 天，可按需调整
           retention-days: 7
+          # 如果目录为空，任务会失败，便于及时发现问题
           if-no-files-found: error
