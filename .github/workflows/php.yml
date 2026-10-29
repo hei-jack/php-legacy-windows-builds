@@ -6,31 +6,41 @@ on:
     tags:
       - 'build-7.3.33-*'
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build:
-    # 官方已移除 windows-2019，必须使用 windows-2022 并手动安装 VC15
     runs-on: windows-2022
+    timeout-minutes: 120
+
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [nts, ts]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install VC15 toolset and Build PHP 7.3.33
+      - name: Install VS2017 Build Tools (VC15) for PHP 7.3
         shell: pwsh
         run: |
-          # ---- 第一步：安装 VC15 (v141) 工具集 ----
-          Write-Host "Installing VC15 (v141) toolset on windows-2022..."
+          Write-Host "Installing VS2017 Build Tools (VC15) on windows-2022..."
+          
           $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-          
-          # 动态定位 VS 2022 安装路径，避免硬编码 "Enterprise" 导致失败
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installPath = & $vswhere -latest -products * -version "[17.0,18.0)" -property installationPath
-          if (-not $installPath) { throw "Visual Studio 2022 installation not found." }
-          
-          $component = "Microsoft.VisualStudio.Component.VC.v141.x86.x64"
+          if (-not (Test-Path $installer)) {
+            throw "vs_installer.exe not found. Cannot install VC15."
+          }
+
+          # 使用 vs_installer 安装 VC15 核心组件和工作负载
           $vsArgs = @(
-            "modify", "--installPath", "`"$installPath`"",
-            "--add", $component, "--quiet", "--norestart", "--nocache"
+            "modify",
+            "--installPath", "`"${env:ProgramFiles(x86)}\Microsoft Visual Studio\2017\BuildTools`"",
+            "--add", "Microsoft.VisualStudio.Workload.VCTools",
+            "--add", "Microsoft.VisualStudio.Component.VC.v141.x86.x64",
+            "--quiet", "--norestart", "--nocache"
           )
           
           $process = Start-Process -FilePath $installer -ArgumentList $vsArgs -Wait -PassThru -NoNewWindow
@@ -38,15 +48,22 @@ jobs:
             throw "VC15 installation failed with exit code $($process.ExitCode)."
           }
           Write-Host "VC15 toolset installation completed."
-          
-          # ---- 第二步：在同一 shell 中直接执行构建，避免环境变量丢失 ----
-          Write-Host "Starting PHP 7.3.33 build with CVE patches..."
-          powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 7.3
 
-      - name: Upload build artifacts
+      - name: Build PHP 7.3.33 (${{ matrix.variant }})
+        shell: pwsh
+        run: |
+          # 根据矩阵变量构建 NTS 或 TS 版本
+          # 参考 PHP74 项目：-Nts 用于 NTS，省略则默认为 TS
+          if ('${{ matrix.variant }}' -eq 'nts') {
+            powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 7.3 -Nts
+          } else {
+            powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 7.3
+          }
+
+      - name: Upload build artifacts (${{ matrix.variant }})
         uses: actions/upload-artifact@v4
         with:
-          name: php-7.3.33-cve2026-windows
+          name: php-7.3.33-${{ matrix.variant }}-win64
           path: C:\php-sdk\dist\*.zip
           retention-days: 7
           if-no-files-found: error
