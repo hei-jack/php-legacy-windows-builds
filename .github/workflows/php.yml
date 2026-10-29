@@ -10,7 +10,7 @@ jobs:
   build:
     # 使用 windows-2019 运行器。它虽然预装 VS2019，但通常也包含 VS2017 的生成工具。
     # 如果遇到编译器问题，可尝试降级为 `windows-2017`（如果平台仍支持）。
-    runs-on: windows-2017
+    runs-on: windows-2019
 
     steps:
       - name: Checkout repository
