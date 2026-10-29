@@ -1,86 +1,39 @@
 name: Build PHP 7.3.33 with CVE Patches
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # 允许在 Actions 页面手动触发
   push:
     tags:
-      - 'build-7.3.33-*'
-
-permissions:
-  contents: read
-  actions: read
+      - 'build-7.3.33-*' # 可选：推送特定 tag 时自动触发
 
 jobs:
   build:
+    # 使用 windows-2022 运行器。它虽然预装 VS2019，但通常也包含 VS2017 的生成工具。
+    # 如果遇到编译器问题，可尝试降级为 `windows-2017`（如果平台仍支持）。
     runs-on: windows-2022
-    timeout-minutes: 120
-
-    strategy:
-      fail-fast: false
-      matrix:
-        variant: [TS, NTS]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Locate Visual Studio 2022 installation
-        id: vs-locate
+      - name: Bootstrap (VS2017 Build Tools, php-sdk)
         shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (-not (Test-Path $vswhere)) {
-            throw "vswhere.exe not found."
-          }
-          # 动态获取 VS 2022 实际安装路径，避免硬编码 Enterprise 导致失败
-          $installPath = & $vswhere -latest -products * -version "[17.0,18.0)" -property installationPath
-          if (-not $installPath) {
-            throw "Visual Studio 2022 installation not found."
-          }
-          Write-Host "Found VS 2022 at: $installPath"
-          echo "VS_INSTALL_PATH=$installPath" >> $env:GITHUB_OUTPUT
+        run: .\bootstrap.ps1
 
-      - name: Install VC15 (v141) via vs_installer with exact Component ID
-        shell: pwsh
-        run: |
-          $installPath = "${{ steps.vs-locate.outputs.VS_INSTALL_PATH }}"
-          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-          $component = "Microsoft.VisualStudio.Component.VC.v141.x86.x64"
+      - name: Build PHP 7.3.33 with patches
+        shell: powershell
+        # 直接调用仓库的 build.ps1，指定版本为 7.3。
+        # 脚本会自动完成源码克隆、补丁应用、依赖获取和编译全过程。
+        run: .\build.ps1 -Version 7.3
+        # 根据 README，产物位于 C:\php-sdk\dist
+        # 整个编译过程可能需要较长时间（20-40 分钟），请耐心等待。
 
-          $args = @(
-            "modify",
-            "--installPath", "`"$installPath`"",
-            "--add", $component,
-            "--quiet", "--norestart", "--nocache"
-          )
-          $process = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru -NoNewWindow
-          if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
-            throw "VC15 installation failed with exit code $($process.ExitCode)."
-          }
-          Write-Host "VC15 installation completed."
-
-      - name: Verify VC15 is detectable by vswhere
-        id: verify-vc15
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vc15Path = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.v141.x86.x64 -property installationPath
-          if (-not $vc15Path) {
-            Write-Error "VC15 (v141) still not detectable after vs_installer install. Aborting."
-            exit 1
-          }
-          Write-Host "VC15 confirmed at: $vc15Path"
-          echo "VC15_PATH=$vc15Path" >> $env:GITHUB_OUTPUT
-
-      - name: Build PHP 7.3.33 (${{ matrix.variant }})
-        shell: pwsh
-        run: |
-          powershell -ExecutionPolicy Bypass -File .\build.ps1 -Version 7.3 -Flavors ${{ matrix.variant }}
-
-      - name: Upload build artifacts (${{ matrix.variant }})
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: php-7.3.33-${{ matrix.variant }}-win64
+          name: php-7.3.33-cve2026-windows
           path: C:\php-sdk\dist\*.zip
+          # 保留 7 天，可按需调整
           retention-days: 7
+          # 如果目录为空，任务会失败，便于及时发现问题
           if-no-files-found: error
